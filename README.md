@@ -13,17 +13,19 @@ npm run dev
 
 Open http://localhost:5173. The default API URL is `/api`; Vite forwards requests to `http://127.0.0.1:8000`. If you already have `.env` with `VITE_API_URL=http://localhost:8000/api`, change it to `VITE_API_URL=/api` and restart Vite before using a phone. `API_PROXY_TARGET` can override the backend address in the shell that starts Vite. A separate browser API origin requires matching backend `FRONTEND_URL` and HTTPS.
 
-Use the owner credentials generated in the backend `.env`. Create people and teams and assign TL/PM responsibilities. Each person signs in with their own account and selects **Enroll my face**. All roles, including owners, follow the same enrollment flow. Owners can reset a template, but cannot enroll someone else's face.
+Use the owner credentials generated in the backend `.env`. Create people and teams and assign TL/PM responsibilities. On first login, everyone—including owners—sees a required enrollment popup. Complete its three camera checks to unlock the workspace. An enrolled owner can open **People → Enroll face** to enroll a selected user in person. Owners can reset an existing template before replacing it.
 
 ## Enroll and give attendance
 
-1. Select **Enroll my face**, read the consent and enable it, then select **Start camera**.
-2. Allow camera permission. Look straight ahead, then follow each randomized left/right/up/down prompt. Select **Verify this step** and hold the pose through the countdown.
-3. For the blink step, start with eyes open. When prompted, close your eyes for about one second, then reopen. Finish with a front view.
-4. After every step passes, enrollment is saved. Select **Capture & check in** to complete the shorter attendance challenge. Checkout uses its own new challenge.
-5. The dashboard and attendance table show the full check-in/out date and time, including seconds, in **Asia/Dhaka**. An open shift remains available for checkout after midnight.
+1. Sign in. If you have no verified face profile, the enrollment popup appears automatically. Read the consent, enable it, then select **Start camera**. Other workspace features stay locked until enrollment succeeds; you can still sign out.
+2. **Look forward:** keep your face inside the oval with your eyes open. Press **I’m ready — capture** and hold still through the countdown.
+3. **Turn slightly:** follow the visual example and turn your head a little left or right, about 20°. Keep your face visible, then press **I’m ready — capture**.
+4. **Close and open eyes:** face the camera and press **Start eye check**. Start with your eyes open. When **CLOSE** appears, close both eyes for about one second, then reopen. The result saves automatically after this third check passes.
+5. Enrollment unlocks the workspace. Check-in and checkout use the same three simple live-camera checks. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
 
-There is no file/photo upload option. Camera permission failures show retry instructions, and switching away from the page stops the camera and requires a fresh session. Old single-photo enrollments must complete the new guided flow before attendance is enabled; the old face must match during that upgrade. Ask an owner to reset a profile if it must be replaced.
+For owner-assisted enrollment: finish your own enrollment, open **People**, select **Enroll face** beside the target user, confirm their identity and consent, and capture that person through the same three steps. Their account then opens normally. Already enrolled profiles must be reset before replacement.
+
+There is no file/photo upload option. Camera permission failures show retry instructions, and switching away from the page stops the camera and requires a fresh session. Old single-photo enrollments must complete the new guided flow before attendance is enabled; the old face must match during that upgrade. Ask an owner to reset or help enroll a profile if needed.
 
 Motion checks help reject a static photo. They are not certified anti-spoofing and cannot guarantee protection against replayed videos, manipulated frames or virtual cameras. Real-camera accuracy needs testing in your environment.
 
@@ -67,4 +69,4 @@ npx playwright install chromium
 npm test
 ```
 
-The browser checks use a fake webcam and mocked API to verify enrollment steps, retry behavior, mobile layouts, attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
+The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.

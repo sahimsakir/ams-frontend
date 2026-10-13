@@ -111,6 +111,7 @@ async function api<T>(
       sessionStorage.removeItem("ams_token");
       window.dispatchEvent(new Event("ams-expired"));
     }
+    if (data.face_enrollment_required) window.dispatchEvent(new Event("ams-enroll-required"));
     throw new Error(
       data.errors
         ? Object.values(data.errors).flat().join(" ")
@@ -176,6 +177,7 @@ function App() {
     [leaves, setLeaves] = useState<Leave[]>([]),
     [days, setDays] = useState<Day[]>([]),
     [modal, setModal] = useState<string | null>(null),
+    [enrollmentUser, setEnrollmentUser] = useState<User | null>(null),
     [editing, setEditing] = useState<User | null>(null),
     [editingTeam, setEditingTeam] = useState<Team | null>(null),
     [reqPage, setReqPage] = useState(1),
@@ -206,6 +208,8 @@ function App() {
     const expired = () => {
       token = "";
       setUser(null);
+      setFaceEnrolled(false);
+      setModal(null);
       setPeople([]);
       setRequests(null);
       setAtt(null);
@@ -215,6 +219,8 @@ function App() {
       setPage(location.hash === "#requests" ? "requests" : "overview");
       setReady(true);
     };
+    const requireEnrollment = () => { setFaceEnrolled(false); setModal(null); setEnrollmentUser(null); };
+    window.addEventListener("ams-enroll-required", requireEnrollment);
     window.addEventListener("ams-expired", expired);
     if (token)
       api<{ user: User; face_enrolled: boolean }>("/me")
@@ -225,10 +231,10 @@ function App() {
         .catch((e) => setError(e.message))
         .finally(() => setReady(true));
     else setReady(true);
-    return () => window.removeEventListener("ams-expired", expired);
+    return () => { window.removeEventListener("ams-expired", expired); window.removeEventListener("ams-enroll-required", requireEnrollment); };
   }, []);
   useEffect(() => {
-    if (!user) return;
+    if (!user || !faceEnrolled) return;
     let alive = true;
     Promise.all([
       api<Dashboard>("/dashboard"),
@@ -274,7 +280,7 @@ function App() {
     return () => {
       alive = false;
     };
-  }, [user, revision, reqPage, attPage]);
+  }, [user, faceEnrolled, revision, reqPage, attPage]);
   useEffect(() => {
     if (!notice) return;
     const id = setTimeout(() => setNotice(""), 5000);
@@ -336,7 +342,9 @@ function App() {
                 );
                 token = d.token;
                 sessionStorage.setItem("ams_token", token);
-                setUser(d.user);
+                const me = await api<{ user: User; face_enrolled: boolean }>("/me");
+                setFaceEnrolled(me.face_enrolled);
+                setUser(me.user);
               });
             }}
           >
@@ -367,6 +375,22 @@ function App() {
         </section>
       </div>
     );
+  if (!faceEnrolled) return (
+    <div className="enrollment-required">
+      <section className="modal enrollment-gate" role="dialog" aria-modal="true" aria-labelledby="enrollment-required-title">
+        <span className="eyebrow">WELCOME, {user.name}</span>
+        <h2 id="enrollment-required-title">Enroll your face to continue</h2>
+        <p>Complete these 3 quick camera checks to unlock your workspace. You only need to enroll once.</p>
+        <CameraChallenge purpose="enroll" request={api} onVerified={async (challenge_id) => {
+          const result = await api<{ message: string }>("/face/enroll", "POST", { challenge_id });
+          setFaceEnrolled(true); setNotice(result.message); refresh((n) => n + 1);
+        }} />
+        <button className="text-button gate-signout" onClick={() => run(async () => {
+          await api("/logout", "POST"); token = ""; sessionStorage.removeItem("ams_token"); setUser(null); setFaceEnrolled(false); setError("");
+        })}>Sign out</button>
+      </section>
+    </div>
+  );
   const review =
     requests?.data.filter(
       (a) =>
@@ -993,10 +1017,11 @@ function App() {
                             >
                               Edit
                             </button>
+                            {!p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
                             {p.face_reset_available && (
                               <button
                                 onClick={() => {
-                                  if (confirm("Reset this face profile? This person must enroll themselves again."))
+                                  if (confirm("Reset this face profile? The user or an owner must enroll it again."))
                                     run(() =>
                                       submit(
                                         `/users/${p.id}/face`,
@@ -1114,7 +1139,7 @@ function App() {
                     {
                       in: "Start your day",
                       out: "Wrap up your day",
-                      enroll: "Enroll a face profile",
+                      enroll: enrollmentUser ? `Enroll face: ${enrollmentUser.name}` : "Enroll my face",
                       person: editing ? "Edit person" : "Add a person",
                       members: "Team membership",
                     } as Record<string, string>
@@ -1124,6 +1149,7 @@ function App() {
               <button
                 onClick={() => {
                   setModal(null);
+                  setEnrollmentUser(null);
                   setError("");
                 }}
                 aria-label="Close dialog"
@@ -1140,12 +1166,14 @@ function App() {
               <CameraChallenge
                 purpose={modal as "enroll" | "in" | "out"}
                 request={api}
+                target={modal === "enroll" ? enrollmentUser || undefined : undefined}
                 onVerified={async (challenge_id) => {
-                  const result = await api<{ message: string; attendance?: Attendance }>(modal === "enroll" ? "/face/enroll" : "/attendance", "POST", { challenge_id, ...(modal === "enroll" ? {} : { action: modal }) });
-                  if (modal === "enroll") setFaceEnrolled(true);
+                  const result = await api<{ message: string; user_id?: number; attendance?: Attendance }>(modal === "enroll" ? "/face/enroll" : "/attendance", "POST", { challenge_id, ...(modal === "enroll" ? {} : { action: modal }) });
+                  if (modal === "enroll" && result.user_id === user.id) setFaceEnrolled(true);
                   if (result.attendance) setDash((old) => old ? { ...old, today: result.attendance! } : old);
                   setNotice(result.message + (result.attendance ? ` · ${time(modal === "out" ? result.attendance.check_out : result.attendance.check_in)} (Asia/Dhaka)` : ""));
                   setModal(null);
+                  setEnrollmentUser(null);
                   refresh((n) => n + 1);
                 }}
               />

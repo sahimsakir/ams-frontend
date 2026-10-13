@@ -1112,3 +1112,23 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 }
 
 .camera-flow.is-ready .camera-intro { display: none; }
+
+.enrollment-required { min-height: 100dvh; background: #edf5f2; padding: 20px; display: grid; place-items: center; }
+.enrollment-gate { width: 600px; max-width: 100%; max-height: none; }
+.enrollment-gate h2 { font-size: 1.5rem; line-height: 1.4; }
+.gate-signout { display: block; margin: 16px auto 0; }
+.camera-steps { display: flex; list-style: none; padding: 0; margin: 16px 0; gap: 8px; }
+.camera-steps li { flex: 1; font-size: .8125rem; text-align: center; color: #52645d; }
+.camera-steps li span { display: block; margin: 0 auto 6px; border-radius: 50%; width: 28px; height: 28px; line-height: 28px; background: #edf2ef; }
+.camera-steps .current span, .camera-steps .done span { background: #137b70; color: white; }
+.camera-steps .current { color: #137b70; font-weight: 700; }
+.capture-status { position: absolute; bottom: 8px; left: 8px; right: 8px; padding: 10px; background: #10271fe8; border-radius: 8px; color: white; font-size: 1rem; font-weight: 700; text-align: center; }
+.pose-example { float: right; width: 80px; height: 76px; margin-left: 8px; }
+.pose-example svg { width: 100%; height: 100%; fill: #e9f5ef; stroke: #137b70; stroke-width: 3; stroke-linecap: round; }
+.pose-example.left .demo-nose { transform: translateX(-9px); }
+.pose-example.right .demo-nose { transform: translateX(9px); }
+.pose-example.blink .demo-eye { animation: eye-example 3s ease-in-out infinite; transform-origin: 50px 34px; }
+@keyframes eye-example { 0%, 30%, 80%, 100% { transform: scaleY(1); stroke-width: 3; } 45%, 65% { transform: scaleY(.15); stroke-width: 6; } }
+.camera-instructions::after { content: ""; display: block; clear: both; }
+@media (max-width: 480px) { .enrollment-required { padding: 12px; } .enrollment-gate { padding: 18px; } }
+@media (prefers-reduced-motion: reduce) { .pose-example.blink .demo-eye { animation: none; } }
