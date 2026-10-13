@@ -1091,3 +1091,24 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
   .clock-card, .quick, .setting, .team-card { padding: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Guided camera capture: fit narrow phones and leave controls in normal scroll flow. */
+.camera-flow { min-width: 0; }
+.camera-flow .camera { width: 100%; max-height: 38dvh; aspect-ratio: 4 / 3; }
+.camera-flow .camera video { object-fit: contain; }
+.camera-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; padding: 20px; text-align: center; }
+.camera-instructions { padding: 16px 0; overflow-wrap: anywhere; }
+.camera-instructions h3 { font-size: 1.125rem; line-height: 1.4; margin: 8px 0; }
+.camera-instructions p { min-height: 3em; margin: 8px 0 0; }
+.camera-instructions progress { display: block; width: 100%; height: 8px; margin-top: 8px; accent-color: #28734d; }
+.camera-flow .consent input { width: 20px; height: 20px; flex: 0 0 20px; }
+.camera-flow > small { display: block; margin-top: 12px; line-height: 1.5; }
+.camera-restart { margin-top: 10px; }
+.clock-times strong { font-size: clamp(.9375rem, 1.1vw, 1.125rem); line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .clock-times { grid-template-columns: 1fr; gap: 12px; }
+  .camera-flow .camera { max-height: 32dvh; }
+  .camera-flow button { min-height: 48px; white-space: normal; }
+}
+
+.camera-flow.is-ready .camera-intro { display: none; }

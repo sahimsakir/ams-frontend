@@ -6,3 +6,7 @@ dist/
 *.tsbuildinfo
 *.log
 .DS_Store
+
+.certs/
+test-results/
+playwright-report/

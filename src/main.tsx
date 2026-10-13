@@ -1,6 +1,5 @@
 import React, {
   useEffect,
-  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -25,6 +24,7 @@ import {
   FileCheck2,
 } from "lucide-react";
 import "./style.css";
+import { CameraChallenge } from "./CameraChallenge";
 type User = {
   id: number;
   name: string;
@@ -34,6 +34,7 @@ type User = {
   designation?: string;
   phone?: string;
   face_enrolled?: boolean;
+  face_reset_available?: boolean;
 };
 type Leave = {
   id: number;
@@ -87,7 +88,7 @@ type Dashboard = {
 };
 type Page<T> = { data: T[]; current_page: number; last_page: number };
 let token = sessionStorage.getItem("ams_token") || "";
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000/api";
+const API = import.meta.env.VITE_API_URL || "/api";
 async function api<T>(
   path: string,
   method = "GET",
@@ -126,16 +127,17 @@ const date = (s: string) =>
     month: "short",
     year: "numeric",
   });
-const time = (s?: string | null) =>
-  s
-    ? new Date(
-        s.includes("T") ? s : s.replace(" ", "T") + "Z",
-      ).toLocaleTimeString("en-GB", {
-        timeZone: "Asia/Dhaka",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : "—";
+const time = (s?: string | null) => {
+  if (!s) return "—";
+  let iso = s.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+  if (!/(Z|[+-]\d{2}:\d{2})$/i.test(iso)) iso += "Z";
+  const value = new Date(iso);
+  if (Number.isNaN(value.getTime())) return "Time unavailable";
+  return value.toLocaleString("en-GB", {
+    timeZone: "Asia/Dhaka", day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+  });
+};
 function Badge({ value }: { value: string }) {
   return <span className={"badge " + value}>{label(value)}</span>;
 }
@@ -174,7 +176,6 @@ function App() {
     [leaves, setLeaves] = useState<Leave[]>([]),
     [days, setDays] = useState<Day[]>([]),
     [modal, setModal] = useState<string | null>(null),
-    [cameraUser, setCameraUser] = useState<number | null>(null),
     [editing, setEditing] = useState<User | null>(null),
     [editingTeam, setEditingTeam] = useState<Team | null>(null),
     [reqPage, setReqPage] = useState(1),
@@ -639,15 +640,15 @@ function App() {
                   <p>
                     {dash?.today
                       ? "Make room for your best work."
-                      : "Capture a photo to start your working day."}
+                      : "Complete the live camera checks to start your day."}
                   </p>
                   <div className="clock-times">
                     <div>
-                      <small>CHECK IN</small>
+                      <small>CHECK IN · ASIA/DHAKA</small>
                       <strong>{time(dash?.today?.check_in)}</strong>
                     </div>
                     <div>
-                      <small>CHECK OUT</small>
+                      <small>CHECK OUT · ASIA/DHAKA</small>
                       <strong>{time(dash?.today?.check_out)}</strong>
                     </div>
                     <div>
@@ -658,11 +659,11 @@ function App() {
                     </div>
                   </div>
                   <button
-                    disabled={!!dash?.today?.check_out || !faceEnrolled}
-                    onClick={() => setModal(dash?.today ? "out" : "in")}
+                    disabled={faceEnrolled && !!dash?.today?.check_out}
+                    onClick={() => setModal(!faceEnrolled ? "enroll" : dash?.today ? "out" : "in")}
                   >
                     <Camera size={18} />
-                    {dash?.today?.check_out
+                    {!faceEnrolled ? "Enroll my face" : dash?.today?.check_out
                       ? "Workday complete"
                       : dash?.today
                         ? "Capture & check out"
@@ -671,7 +672,7 @@ function App() {
                   </button>
                   {!faceEnrolled && (
                     <small className="enroll-note">
-                      Ask your owner to enroll your face before checking in.
+                      Complete your guided self-enrollment before giving attendance.
                     </small>
                   )}
                 </div>
@@ -850,17 +851,18 @@ function App() {
           {page === "attendance" && (
             <>
               <div className="toolbar">
-                <p>Photo-verified records · all times Asia/Dhaka</p>
+                <p>Live-camera verified records · all times Asia/Dhaka</p>
                 <div>
+                  {!faceEnrolled && <button className="primary" onClick={() => setModal("enroll")}>Enroll my face</button>}
                   <button
                     onClick={() => setModal("in")}
-                    disabled={!faceEnrolled}
+                    disabled={!faceEnrolled || !!dash?.today}
                   >
                     Check in
                   </button>
                   <button
                     onClick={() => setModal("out")}
-                    disabled={!faceEnrolled}
+                    disabled={!faceEnrolled || !dash?.today || !!dash?.today.check_out}
                   >
                     Check out
                   </button>
@@ -991,18 +993,10 @@ function App() {
                             >
                               Edit
                             </button>
-                            <button
-                              onClick={() => {
-                                setCameraUser(p.id);
-                                setModal("enroll");
-                              }}
-                            >
-                              Enroll face
-                            </button>
-                            {p.face_enrolled && (
+                            {p.face_reset_available && (
                               <button
                                 onClick={() => {
-                                  if (confirm("Delete this face template?"))
+                                  if (confirm("Reset this face profile? This person must enroll themselves again."))
                                     run(() =>
                                       submit(
                                         `/users/${p.id}/face`,
@@ -1012,7 +1006,7 @@ function App() {
                                     );
                                 }}
                               >
-                                Delete face
+                                Reset face
                               </button>
                             )}
                           </div>
@@ -1143,24 +1137,17 @@ function App() {
               </div>
             )}
             {["in", "out", "enroll"].includes(modal) ? (
-              <CameraCapture
-                busy={busy}
-                enrollment={modal === "enroll"}
-                onError={setError}
-                onCapture={(blob) =>
-                  run(async () => {
-                    const f = new FormData();
-                    f.append("photo", blob, "capture.jpg");
-                    f.append("consent", "1");
-                    if (modal !== "enroll") f.append("action", modal);
-                    await submit(
-                      modal === "enroll"
-                        ? `/users/${cameraUser}/face`
-                        : "/attendance",
-                      f,
-                    );
-                  })
-                }
+              <CameraChallenge
+                purpose={modal as "enroll" | "in" | "out"}
+                request={api}
+                onVerified={async (challenge_id) => {
+                  const result = await api<{ message: string; attendance?: Attendance }>(modal === "enroll" ? "/face/enroll" : "/attendance", "POST", { challenge_id, ...(modal === "enroll" ? {} : { action: modal }) });
+                  if (modal === "enroll") setFaceEnrolled(true);
+                  if (result.attendance) setDash((old) => old ? { ...old, today: result.attendance! } : old);
+                  setNotice(result.message + (result.attendance ? ` · ${time(modal === "out" ? result.attendance.check_out : result.attendance.check_in)} (Asia/Dhaka)` : ""));
+                  setModal(null);
+                  refresh((n) => n + 1);
+                }}
               />
             ) : ["leave", "home_office", "overtime"].includes(modal) ? (
               <RequestForm
@@ -1562,107 +1549,6 @@ function RequestForm({
         <ArrowUpRight size={17} />
       </button>
     </form>
-  );
-}
-function CameraCapture({
-  onCapture,
-  onError,
-  busy,
-  enrollment,
-}: {
-  onCapture: (b: Blob) => void;
-  onError: (s: string) => void;
-  busy: boolean;
-  enrollment: boolean;
-}) {
-  const video = useRef<HTMLVideoElement>(null),
-    stream = useRef<MediaStream | null>(null);
-  const [ready, setReady] = useState(false),
-    [consent, setConsent] = useState(false);
-  useEffect(() => {
-    let dead = false;
-    navigator.mediaDevices
-      ?.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 480 },
-        audio: false,
-      })
-      .then((s) => {
-        if (dead) {
-          s.getTracks().forEach((t) => t.stop());
-          return;
-        }
-        stream.current = s;
-        if (video.current) video.current.srcObject = s;
-      })
-      .catch(() =>
-        onError(
-          "Camera access failed. Allow camera permission and use HTTPS or localhost.",
-        ),
-      );
-    if (!navigator.mediaDevices) onError("Camera requires HTTPS or localhost.");
-    return () => {
-      dead = true;
-      stream.current?.getTracks().forEach((t) => t.stop());
-    };
-  }, []);
-  function capture() {
-    const v = video.current;
-    if (!v || !v.videoWidth) return;
-    const c = document.createElement("canvas");
-    c.width = v.videoWidth;
-    c.height = v.videoHeight;
-    c.getContext("2d")!.drawImage(v, 0, 0);
-    c.toBlob(
-      (b) => {
-        if (b) onCapture(b);
-      },
-      "image/jpeg",
-      0.9,
-    );
-  }
-  return (
-    <>
-      <div className="camera">
-        <video
-          ref={video}
-          autoPlay
-          muted
-          playsInline
-          onLoadedData={() => setReady(true)}
-        />
-        <div className="face-guide" />
-      </div>
-      <p>
-        {enrollment
-          ? "Capture the selected employee in person after checking their identity."
-          : "Look straight at the camera with your face clearly visible."}
-      </p>
-      <label className="consent">
-        <input
-          type="checkbox"
-          checked={consent}
-          onChange={(e) => setConsent(e.target.checked)}
-        />
-        {enrollment
-          ? "I verified this employee’s identity and obtained consent to store their face template."
-          : "I consent to this photo being used for attendance verification and stored as an attendance record."}
-      </label>
-      <button
-        disabled={busy || !ready || !consent}
-        className="primary wide"
-        onClick={capture}
-      >
-        <Camera size={18} />
-        {busy
-          ? "Verifying…"
-          : enrollment
-            ? "Capture & enroll"
-            : "Capture & verify"}
-      </button>
-      <small className="muted">
-        Photo verification is not liveness detection.
-      </small>
-    </>
   );
 }
 createRoot(document.getElementById("root")!).render(
