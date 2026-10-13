@@ -508,6 +508,7 @@ function App() {
             <button
               key={id}
               className={page === id ? "active" : ""}
+              aria-current={page === id ? "page" : undefined}
               onClick={() => nav(id)}
             >
               <Icon size={19} />
@@ -865,7 +866,7 @@ function App() {
                   </button>
                 </div>
               </div>
-              <div className="card table-wrap">
+              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
@@ -957,7 +958,7 @@ function App() {
                   <Plus size={16} /> Add person
                 </button>
               </div>
-              <div className="card table-wrap">
+              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
@@ -1074,7 +1075,7 @@ function App() {
                 </div>
               </div>
               <h2 className="section-title">Audit trail</h2>
-              <div className="card table-wrap">
+              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
                 <table>
                   <thead>
                     <tr>
