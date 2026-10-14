@@ -27,6 +27,7 @@ import {
 import "./style.css";
 import { CameraChallenge } from "./CameraChallenge";
 type User = {
+  role_id?: number; role_name?: string; permissions?: string[]; direct_permission_ids?: number[];
   slot_start?: string | null; slot_end?: string | null; slot_team_id?: number | null;
   id: number;
   name: string;
@@ -93,6 +94,8 @@ type Dashboard = {
   teams: { name: string; team_role: string }[];
 };
 type Page<T> = { data: T[]; current_page: number; last_page: number };
+type Permission = {id:number;name:string;slug:string;system:boolean};
+type AccessRole = {id:number;name:string;slug:string;system:boolean;permissions:Permission[]};
 type AttendancePage = Page<Attendance> & {summary?: Record<string,number>};
 const dhakaToday = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Dhaka",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 const minutesLabel = (value: number) => `${Math.floor(value/60)}h ${value%60}m`;
@@ -190,6 +193,9 @@ function App() {
     [reportEnd,setReportEnd] = useState(dhakaToday),
     [reportUser,setReportUser] = useState(""),
     [slotTarget,setSlotTarget] = useState<{kind:"users"|"teams";id:number;name:string;slot_start?:string|null;slot_end?:string|null;slot_team_id?:number|null}|null>(null),
+    [accessRoles,setAccessRoles] = useState<AccessRole[]>([]),
+    [permissions,setPermissions] = useState<Permission[]>([]),
+    [accessEdit,setAccessEdit] = useState<AccessRole|Permission|null>(null),
     [teams, setTeams] = useState<Team[]>([]),
     [people, setPeople] = useState<User[]>([]),
     [leaves, setLeaves] = useState<Leave[]>([]),
@@ -211,6 +217,7 @@ function App() {
       }[]
     >([]),
     [faceEnrolled, setFaceEnrolled] = useState(false);
+  const can = (permission: string) => !!user && (user.role === "owner" || !!user.permissions?.includes(permission));
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -256,12 +263,12 @@ function App() {
     if (!user || !faceEnrolled) return;
     let alive = true;
     Promise.all([
-      api<Dashboard>("/dashboard"),
-      api<Page<Application>>(`/applications?page=${reqPage}`),
-      api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}`),
-      api<Team[]>("/teams"),
-      api<Leave[]>("/leave-types"),
-      api<Day[]>("/calendar"),
+      can("dashboard.view") ? api<Dashboard>("/dashboard") : Promise.resolve(null),
+      can("applications.view") ? api<Page<Application>>(`/applications?page=${reqPage}`) : Promise.resolve(null),
+      can("attendance.view") ? api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}`) : Promise.resolve(null),
+      can("teams.view") ? api<Team[]>("/teams") : Promise.resolve([]),
+      can("leave_types.view") ? api<Leave[]>("/leave-types") : Promise.resolve([]),
+      can("calendar.view") ? api<Day[]>("/calendar") : Promise.resolve([]),
       api<{ user: User; face_enrolled: boolean }>("/me"),
     ])
       .then(([d, r, a, t, l, h, m]) => {
@@ -273,13 +280,13 @@ function App() {
           setLeaves(l);
           setDays(h);
           setFaceEnrolled(m.face_enrolled);
+          if(JSON.stringify(user)!==JSON.stringify(m.user))setUser(m.user);
         }
       })
       .catch((e) => alive && setError(e.message));
-    if (user.role === "owner")
-      Promise.all([
-        api<User[]>("/users"),
-        api<
+    Promise.all([
+        can("users.view") ? api<User[]>("/users") : Promise.resolve([]),
+        can("audit.view") ? api<
           Page<{
             id: number;
             name: string;
@@ -287,11 +294,13 @@ function App() {
             subject: string;
             created_at: string;
           }>
-        >("/audit"),
+        >("/audit") : Promise.resolve({data:[]}),
+        (user.role === "owner" || can("teams.manage") || can("users.manage")) ? api<AccessRole[]>("/roles") : Promise.resolve([]),
+        user.role === "owner" ? api<Permission[]>("/permissions") : Promise.resolve([]),
       ])
-        .then(([p, a]) => {
+        .then(([p, a, r, permissions]) => {
           if (alive) {
-            setPeople(p);
+            setPeople(p); setAccessRoles(r); setPermissions(permissions);
             setAudit(a.data);
           }
         })
@@ -418,18 +427,15 @@ function App() {
           (x) => x.reviewer_id === user.id && x.status === "pending",
         ),
     ) || [];
-  const navigation: [string, string, typeof Home][] = [
-    ["overview", "Overview", LayoutDashboard],
-    ["attendance", "Attendance", Clock3],
-    ["requests", "Requests", CalendarDays],
-    ["teams", "My teams", Users],
-    ...(user.role === "owner"
-      ? ([
-          ["people", "People", Users],
-          ["settings", "Workspace", Settings],
-        ] as [string, string, typeof Home][])
-      : []),
-  ] as const;
+  const navigation: [string,string,typeof Home][] = [
+    ["overview","Overview",LayoutDashboard],
+    ...(can("attendance.view") ? [["attendance","Attendance",Clock3] as [string,string,typeof Home]] : []),
+    ...(can("applications.view") ? [["requests","Requests",CalendarDays] as [string,string,typeof Home]] : []),
+    ...(can("teams.view") ? [["teams","My teams",Users] as [string,string,typeof Home]] : []),
+    ...(can("users.view") ? [["people","People",Users] as [string,string,typeof Home]] : []),
+    ...(can("leave_types.manage") || can("calendar.manage") || can("audit.view") ? [["settings","Workspace",Settings] as [string,string,typeof Home]] : []),
+    ...(user.role === "owner" ? [["access","Roles & permissions",ShieldCheck] as [string,string,typeof Home]] : []),
+  ];
   const requestCards = (items: Application[]) =>
     items.length ? (
       items.map((a) => (
@@ -479,7 +485,7 @@ function App() {
             ))}
           </div>
           <div className="card-actions">
-            {a.status === "pending" &&
+            {a.status === "pending" && can("applications.review") &&
               a.approvals.some(
                 (x) => x.reviewer_id === user.id && x.status === "pending",
               ) && (
@@ -515,7 +521,7 @@ function App() {
                   </button>
                 </>
               )}
-            {(a.user_id === user.id || user.role === "owner") &&
+            {(a.user_id === user.id || can("applications.manage")) &&
               (a.status === "pending" ||
                 (a.kind === "home_office" && a.status === "approved")) && (
                 <button
@@ -580,7 +586,7 @@ function App() {
           </div>
           <span>
             <strong>{user.name}</strong>
-            <small>{label(user.role)}</small>
+            <small>{user.role_name || label(user.role)}</small>
           </span>
           <Settings size={16} />
         </button>
@@ -704,7 +710,7 @@ function App() {
                     </div>
                   </div>
                   <button
-                    disabled={faceEnrolled && !!dash?.today?.check_out}
+                    disabled={!can("attendance.record") || (faceEnrolled && !!dash?.today?.check_out)}
                     onClick={() => setModal(!faceEnrolled ? "enroll" : dash?.today ? "out" : "in")}
                   >
                     <Camera size={18} />
@@ -748,7 +754,7 @@ function App() {
                     return (
                       <button
                         key={id as string}
-                        onClick={() => setModal(id as string)}
+                        disabled={!can("applications.create")} onClick={() => setModal(id as string)}
                       >
                         <span className="icon-box">
                           <I size={20} />
@@ -871,7 +877,7 @@ function App() {
               </section>
             </>
           )}
-          {page === "requests" && (
+          {page === "requests" && can("applications.view") && (
             <>
               <div className="info-banner">
                 <ShieldCheck size={20} />
@@ -893,7 +899,7 @@ function App() {
               <Pager value={requests} onChange={setReqPage} />
             </>
           )}
-          {page === "attendance" && (
+          {page === "attendance" && can("attendance.view") && (
             <>
               <div className="toolbar">
                 <p>Live-camera verified records · all times Asia/Dhaka</p>
@@ -901,13 +907,13 @@ function App() {
                   {!faceEnrolled && <button className="primary" onClick={() => setModal("enroll")}>Enroll my face</button>}
                   <button
                     onClick={() => setModal("in")}
-                    disabled={!faceEnrolled || !!dash?.today}
+                    disabled={!can("attendance.record") || !faceEnrolled || !!dash?.today}
                   >
                     Check in
                   </button>
                   <button
                     onClick={() => setModal("out")}
-                    disabled={!faceEnrolled || !dash?.today || !!dash?.today.check_out}
+                    disabled={!can("attendance.record") || !faceEnrolled || !dash?.today || !!dash?.today.check_out}
                   >
                     Check out
                   </button>
@@ -964,11 +970,11 @@ function App() {
               <Pager value={att} onChange={setAttPage} />
             </>
           )}
-          {page === "teams" && (
+          {page === "teams" && can("teams.view") && (
             <>
               <div className="section-heading">
                 <h2>{teams.length} team connections</h2>
-                {user.role === "owner" && (
+                {can("teams.manage") && (
                   <button onClick={() => setModal("team")}>
                     <Plus size={16} /> Create team
                   </button>
@@ -982,7 +988,7 @@ function App() {
                     </span>
                     <h2>{t.name}</h2>
 <p>Work slot: {t.slot_start?.slice(0,5)||"09:00"}–{t.slot_end?.slice(0,5)||"18:00"}</p>
-                    {user.role==="owner" && <button onClick={()=>{setSlotTarget({kind:"teams",...t});setModal("slot");}}>Edit work slot</button>}
+                    {can("work_slots.manage") && <button onClick={()=>{setSlotTarget({kind:"teams",...t});setModal("slot");}}>Edit work slot</button>}
                     <p>{t.members.length} people · connected across roles</p>
                     {t.members.map((m) => (
                       <div className="member" key={m.id}>
@@ -991,7 +997,7 @@ function App() {
                         <small>{label(m.team_role)}</small>
                       </div>
                     ))}
-                    {user.role === "owner" && (
+                    {can("teams.manage") && (
                       <button
                         className="wide"
                         onClick={() => {
@@ -1010,14 +1016,16 @@ function App() {
               )}
             </>
           )}
-          {page === "people" && user.role === "owner" && (
+          {page === "people" && can("users.view") && (
             <>
               <div className="section-heading">
                 <h2>{people.length} people in your workspace</h2>
-                <button onClick={() => setModal("import")}>Import CSV</button>
+                <button disabled={!can("users.import")} onClick={() => setModal("import")}>Import CSV</button>
                 <button
                   className="primary"
+                  disabled={!can("users.manage")}
                   onClick={() => {
+                    if(!can("users.manage"))return;
                     setEditing(null);
                     setModal("person");
                   }}
@@ -1043,7 +1051,7 @@ function App() {
                           <strong>{p.name}</strong>
                           <small>{p.email}</small>
                         </td>
-                        <td>{label(p.role)}</td>
+                        <td>{p.role_name || label(p.role)}</td>
                         <td>{p.face_enrolled ? "Enrolled" : "Not enrolled"}</td>
                         <td>
                           <Badge value={p.active ? "active" : "inactive"} />
@@ -1051,17 +1059,20 @@ function App() {
                         <td>
                           <div className="table-actions">
                             <button
+                              disabled={!can("users.manage")}
                               onClick={() => {
+                                if(!can("users.manage"))return;
                                 setEditing(p);
                                 setModal("person");
                               }}
                             >
                               Edit
                             </button>
-<button onClick={()=>{setSlotTarget({kind:"users",...p});setModal("slot");}}>Work slot</button>
-                            {p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
-                            {!p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
-                            {p.face_reset_available && (
+{can("work_slots.manage") && <button onClick={()=>{setSlotTarget({kind:"users",...p});setModal("slot");}}>Work slot</button>}
+                            {user.role === "owner" && <button onClick={()=>{setEditing(p);setModal("user-access");}}>Role & permissions</button>}
+                            {can("users.manage") && p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
+                            {can("face.manage") && !p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
+                            {can("face.manage") && p.face_reset_available && (
                               <button
                                 onClick={() => {
                                   if (confirm("Reset this face profile? The user or an owner must enroll it again."))
@@ -1086,7 +1097,7 @@ function App() {
               </div>
             </>
           )}
-          {page === "settings" && user.role === "owner" && (
+          {page === "settings" && (can("leave_types.manage") || can("calendar.manage") || can("audit.view")) && (
             <>
               <div className="request-grid">
                 <div className="card setting">
@@ -1099,11 +1110,11 @@ function App() {
                     <div className="policy-row" key={l.id}>
                       <strong>{l.name}</strong>
                       <span>{l.annual_limit} days / year</span>
-                      <button onClick={() => { setEditingLeave(l); setModal("policy"); }}>Edit</button>
-                      <button onClick={() => { if(confirm(`Delete ${l.name}? Past requests will remain.`)) run(() => submit(`/leave-types/${l.id}`,undefined,"DELETE")); }}>Delete</button>
+                      <button disabled={!can("leave_types.manage")} onClick={() => { setEditingLeave(l); setModal("policy"); }}>Edit</button>
+                      <button disabled={!can("leave_types.manage")} onClick={() => { if(confirm(`Delete ${l.name}? Past requests will remain.`)) run(() => submit(`/leave-types/${l.id}`,undefined,"DELETE")); }}>Delete</button>
                     </div>
                   ))}
-                  <button onClick={() => { setEditingLeave(null); setModal("policy"); }}>
+                  <button disabled={!can("leave_types.manage")} onClick={() => { setEditingLeave(null); setModal("policy"); }}>
                     <Plus size={16} /> Add leave type
                   </button>
                 </div>
@@ -1122,7 +1133,7 @@ function App() {
                         </small>
                       </span>
                       <button
-                        aria-label="Delete calendar day"
+                        aria-label="Delete calendar day" disabled={!can("calendar.manage")}
                         onClick={() =>
                           run(() =>
                             submit(`/calendar/${d.id}`, undefined, "DELETE"),
@@ -1133,7 +1144,7 @@ function App() {
                       </button>
                     </div>
                   ))}
-                  <button onClick={() => setModal("calendar")}>
+                  <button disabled={!can("calendar.manage")} onClick={() => setModal("calendar")}>
                     <Plus size={16} /> Add calendar override
                   </button>
                 </div>
@@ -1163,6 +1174,13 @@ function App() {
               </div>
             </>
           )}
+          {page==="access" && user.role==="owner" && <>
+            <div className="section-heading"><h2>Roles & permissions</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-role");}}>Create role</button><button onClick={()=>{setAccessEdit(null);setModal("access-permission");}}>Create permission</button></div>
+            <p>Each user has one role, plus optional direct permissions. Effective access is the union of both. Owner always has full access. Team membership does not grant account permissions.</p>
+            <div className="request-grid">{accessRoles.map(r=><div className="card setting" key={r.id}><h2>{r.name}</h2><small>{r.slug} · {r.system?"Initial role":"Custom role"}</small><p>{r.slug==="owner"?"All permissions automatically":r.permissions.map(p=>p.name).join(", ")||"No permissions"}</p>{r.slug!=="owner" && <button onClick={()=>{setAccessEdit(r);setModal("access-role");}}>Edit role</button>}{!r.system && <button onClick={()=>{if(confirm(`Delete role ${r.name}? Reassign its users first.`))run(()=>submit(`/roles/${r.id}`,undefined,"DELETE"));}}>Delete role</button>}</div>)}</div>
+            <h2 className="section-title">Permissions</h2><p>Built-in keys protect existing features. Custom keys can be attached to new features through the backend permission middleware.</p>
+            <div className="card">{permissions.map(p=><div className="policy-row" key={p.id}><span><strong>{p.name}</strong><small>{p.slug}</small></span><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system && <button onClick={()=>{if(confirm(`Delete ${p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>)}</div>
+          </>}
           <footer className="page-footer">
             attendance<span>Built around your working day.</span>
           </footer>
@@ -1232,6 +1250,18 @@ function App() {
                 busy={busy}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "user-access" && editing ? (
+              <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(()=>submit(`/users/${editing.id}/access`,{role_id:Number(f.get("role_id")),permission_ids:f.getAll("permission_ids").map(Number)},"PUT"));}}>
+                <h3>{editing.name}</h3><Field title="Assigned role"><select name="role_id" aria-label="Assigned role" defaultValue={editing.role_id} required>{accessRoles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
+                <h3>Additional user permissions</h3><p>These add to the role's permissions; unchecking removes only the direct grant.</p><PermissionChoices permissions={permissions} selected={editing.direct_permission_ids||[]} />
+                <button className="primary wide" disabled={busy}>Save user access</button>
+              </form>
+            ) : modal === "access-role" || modal === "access-permission" ? (
+              <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const isRole=modal==="access-role";run(()=>submit(`/${isRole?"roles":"permissions"}${accessEdit?`/${accessEdit.id}`:""}`,{name:f.get("name"),slug:f.get("slug"),...(isRole?{permission_ids:f.getAll("permission_ids").map(Number)}:{})},accessEdit?"PUT":"POST"));}}>
+                <Field title="Display name"><input name="name" required maxLength={100} defaultValue={accessEdit?.name} /></Field><Field title="Permission or role key"><input name="slug" required readOnly={accessEdit?.system} pattern={modal==="access-role"?"[a-z][a-z0-9_]*":"[a-z][a-z0-9_.]*"} defaultValue={accessEdit?.slug} placeholder={modal==="access-role"?"custom_role":"feature.action"} /></Field>
+                {modal==="access-role" && <PermissionChoices permissions={permissions} selected={accessEdit && "permissions" in accessEdit ? accessEdit.permissions.map(p=>p.id):[]} />}
+                <button className="primary wide" disabled={busy}>Save {modal==="access-role"?"role":"permission"}</button>
+              </form>
             ) : modal === "slot" && slotTarget ? (
               <form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(()=>submit(`/work-slots/${slotTarget.kind}/${slotTarget.id}`,{slot_start:f.slot_start||null,slot_end:f.slot_end||null,slot_team_id:f.slot_team_id||null},"PUT"));}}>
                 <h3>{slotTarget.name}</h3><p>Asia/Dhaka, same-day slots. Blank times inherit the team slot or default 09:00–18:00. Changes apply to future check-ins.</p>
@@ -1241,7 +1271,7 @@ function App() {
               </form>
             ) : modal === "import" ? (
               <form onSubmit={(e) => { e.preventDefault(); const f=new FormData(e.currentTarget); run(() => submit("/users/import",f)); }}>
-                <p>Import up to 500 new users. Existing emails are rejected; all rows must be valid before any users are created.</p>
+                <p>Import up to 500 new users. Use role keys from the role list; custom role keys are supported. Existing emails are rejected; all rows must be valid before any users are created.</p>
                 <p>Required headers: name,email,password. Optional: role,active,designation,phone. Passwords must have at least 12 characters. Active accepts true/false or 1/0.</p>
                 <a href="data:text/csv;charset=utf-8,name%2Cemail%2Cpassword%2Crole%2Cactive%2Cdesignation%2Cphone%0AExample%20User%2Cemployee%40example.com%2CReplace-this-password%2Cemployee%2Ctrue%2CDeveloper%2C" download="users-template.csv">Download CSV template</a>
                 <Field title="CSV file"><input name="file" type="file" accept=".csv,text/csv" required /></Field>
@@ -1278,11 +1308,7 @@ function App() {
                       name="role"
                       defaultValue={editing?.role || "employee"}
                     >
-                      {["owner", "manager", "pm", "team_lead", "employee"].map(
-                        (x) => (
-                          <option key={x}>{x}</option>
-                        ),
-                      )}
+                      {(user.role === "owner" ? accessRoles : [{id:0,slug:editing?.role||"employee",name:editing?.role_name||"Members"}]).map(r=><option key={r.id} value={r.slug}>{r.name}</option>)}
                     </select>
                   </Field>
                   <Field title="Status">
@@ -1366,9 +1392,7 @@ function App() {
                           ?.team_role || "employee"
                       }
                     >
-                      {["employee", "team_lead", "manager", "pm"].map((r) => (
-                        <option key={r}>{r}</option>
-                      ))}
+                      {accessRoles.map(r=><option key={r.id} value={r.slug}>{r.name}</option>)}
                     </select>
                   </div>
                 ))}
@@ -1513,6 +1537,9 @@ function Pager({
       </button>
     </div>
   ) : null;
+}
+function PermissionChoices({permissions,selected}:{permissions:Permission[];selected:number[]}) {
+ return <div className="permission-choices">{permissions.map(p=><label key={p.id}><input name="permission_ids" type="checkbox" value={p.id} defaultChecked={selected.includes(p.id)} /><span>{p.name}<small>{p.slug}</small></span></label>)}</div>;
 }
 function DocumentUpload({required}: {required: boolean}) {
  const input=useRef<HTMLInputElement>(null);

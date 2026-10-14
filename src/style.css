@@ -1171,3 +1171,9 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 .attendance-stat p { font-size:13px; margin:8px 0 0; }
 @media(max-width:1000px){.attendance-stats{grid-template-columns:repeat(2,minmax(0,1fr));}}
 @media(max-width:420px){.attendance-stat{padding:14px;}.attendance-stat strong{font-size:21px;}.report-filters .field{min-width:100%;}}
+
+.permission-choices {display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:20px 0;max-height:360px;overflow:auto;padding:4px;}
+.permission-choices label {display:flex;align-items:flex-start;gap:10px;padding:12px;border:1px solid #dce4ee;border-radius:10px;cursor:pointer;}
+.permission-choices input {width:18px;height:18px;flex-shrink:0;}
+.permission-choices small {display:block;overflow-wrap:anywhere;color:#64748b;}
+@media(max-width:600px){.permission-choices{grid-template-columns:1fr;}}

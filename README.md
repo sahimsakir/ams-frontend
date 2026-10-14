@@ -100,3 +100,7 @@ Pull both repositories for this release. Run the backend migration and rebuild a
 Attendance has current-month date filters, office/home/leave details and eight summary cards. Owners can select an employee or view everyone. All other roles see only themselves. Missing exits appear after local midnight and do not block the next day's check-in. Hour averages exclude unfinished shifts; actual hours count only the assigned slot (default 09:00–18:00), with no break deduction.
 
 Owners edit individual slots in People → Work slot and team slots in Teams → Edit work slot. Individual times override inherited teams; choose a member team explicitly or use the first configured team. Changes apply to future check-ins. Pull both repos and run the backend migration for this release.
+
+### Roles and permissions
+
+Owner → Roles & permissions creates/edits custom roles and permission definitions. People → Role & permissions assigns one account role plus additive direct user grants. Initial display roles: Owner, Management, Project Manager, Team Lead, Members. Menus/actions use effective permissions; APIs enforce grants and data scope. Custom permission keys are reusable by new features, but their routes must explicitly use the backend middleware. Initial role/permission keys and Owner access are protected. Existing account assignments migrate automatically; pull both repositories, run the backend migration and restart the frontend.
