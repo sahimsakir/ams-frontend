@@ -330,6 +330,10 @@ test('attendance photo buttons preview both captures and respect row permissions
   await page.getByRole('button',{name:side+' photo',exact:true}).click();
   await expect(page.getByRole('img',{name:'Team Member · '+side+' photo'})).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText('Asia/Dhaka');
+  await page.getByRole('button',{name:'Back to attendance details',exact:true}).click();
+  await expect(page.getByRole('dialog')).toContainText('Team Member');
+  await expect(page.getByRole('dialog')).toContainText('Assigned slot');
+  await expect(page.getByRole('button',{name:side+' photo',exact:true})).toBeVisible();
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.getByRole('button',{name:'Close dialog'}).click();
  }

@@ -15,6 +15,7 @@ import {
   Users,
   LogOut,
   ArrowUpRight,
+  ArrowLeft,
   Camera,
   Check,
   X,
@@ -1190,6 +1191,7 @@ function App() {
             aria-modal="true"
             aria-label={label(modal)}
           >
+            {modal === "attendance-photo" && attendanceDetail && <button className="photo-back" onClick={()=>setModal("attendance-detail")}><ArrowLeft size={18}/> Back to attendance details</button>}
             <div className="modal-heading">
               <div>
                 <span className="eyebrow">YOUR WORKSPACE</span>
@@ -1250,7 +1252,7 @@ function App() {
             ) : modal === "attendance-detail" && attendanceDetail ? (
               <div className="attendance-detail"><h3>{attendanceDetail.name}</h3><dl>{[["Date",date(attendanceDetail.work_date)],["Status",attendanceStatus(attendanceDetail)],["Check-in",time(attendanceDetail.check_in)],["Check-out",attendanceDetail.status==="missing_exit"?"Missing exit":time(attendanceDetail.check_out)],["Hours",attendanceDetail.working_minutes==null?"—":minutesLabel(attendanceDetail.working_minutes)],["Workplace",label(attendanceDetail.mode)],["Leave type",attendanceDetail.leave_name||"—"],["Assigned slot",`${attendanceDetail.slot_start||"—"} – ${attendanceDetail.slot_end||"—"}`],["Hours inside slot",attendanceDetail.actual_minutes==null?"—":minutesLabel(attendanceDetail.actual_minutes)]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>{attendanceDetail.can_view_photo?<div className="table-actions">{attendanceDetail.has_in_photo&&<button onClick={()=>viewAttendancePhoto(attendanceDetail,"in")}>Check-in photo</button>}{attendanceDetail.has_out_photo&&<button onClick={()=>viewAttendancePhoto(attendanceDetail,"out")}>Check-out photo</button>}</div>:<p className="muted">Photo access requires permission.</p>}</div>
             ) : modal === "attendance-photo" && attendancePhoto ? (
-              <figure className="attendance-photo"><img src={attendancePhoto.url} alt={attendancePhoto.title}/><figcaption><button onClick={()=>setModal("attendance-detail")}>Back to attendance details</button><strong>{attendancePhoto.title}</strong><p>{attendancePhoto.time} · Asia/Dhaka</p></figcaption></figure>
+              <figure className="attendance-photo"><img src={attendancePhoto.url} alt={attendancePhoto.title}/><figcaption><strong>{attendancePhoto.title}</strong><p>{attendancePhoto.time} · Asia/Dhaka</p></figcaption></figure>
             ) : modal === "profile" && profileData ? (
               <div className="profile-details"><h3>{profileData.name}</h3><p>{profileData.email}</p><p>{profileData.designation||"No designation"}</p><p>{profileData.phone||"No phone number"}</p><p>{profileData.role_name}</p><p>Work slot: {profileData.slot_start?.slice(0,5)||"Inherited"} – {profileData.slot_end?.slice(0,5)||"Inherited"}</p>{profileData.id===user.id&&can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}</div>
             ) : modal === "edit-profile" ? (
