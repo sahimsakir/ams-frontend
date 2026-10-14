@@ -120,3 +120,9 @@ Permissions uses a compact table with separate label, key, type and action colum
 ### Team home-office assignments
 
 Owner and users granted `home_office.manage` get Team home office → Assign home office. Choose one team or All teams, first/last dates and a reason. One-day or longer inclusive ranges are supported, without the personal application's one-year cap. All teams excludes users without a team. Current team membership applies at check-in. Assignment directly authorizes home office; members still perform face check-in/out. Cancel assignment retains historical attendance; overlapping assignments remain effective until individually cancelled. Grant this permission through Roles or People → Role & permissions.
+
+### Page URLs
+
+Pages use `/overview`, `/attendance`, `/requests`, `/teams`, `/people`, `/settings`, `/roles`, `/permissions`, `/team-home-office`, and `/profile`. Refresh and browser back/forward preserve the selected page. A signed-out direct link stays at its destination through login and enrollment. Legacy `/#requests` links redirect to `/requests`. Unknown paths show a page-not-found message; restricted pages show access unavailable.
+
+Vite development/preview handles SPA deep links. In production, configure the frontend web server to serve `index.html` for app paths (Nginx: `location / { try_files $uri $uri/ /index.html; }`). Keep your `/api` proxy separate.

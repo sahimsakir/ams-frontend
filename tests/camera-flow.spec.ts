@@ -339,3 +339,28 @@ test('attendance photo buttons preview both captures and respect row permissions
  await expect(page.getByRole('button',{name:'Check-in photo',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Check-out photo',exact:true})).toHaveCount(0);
 });
+
+test('page URLs survive refresh, direct links and browser history', async ({page})=>{
+ await workspace(page,true);
+ await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await expect(page).toHaveURL(/\/attendance$/);
+ await page.reload();
+ await expect(page.getByRole('button',{name:'Attendance',exact:true})).toHaveAttribute('aria-current','page');
+ await page.getByRole('button',{name:'Requests',exact:true}).click();
+ await expect(page).toHaveURL(/\/requests$/);
+ await page.goBack();
+ await expect(page).toHaveURL(/\/attendance$/);
+ await expect(page.getByRole('button',{name:'Attendance',exact:true})).toHaveAttribute('aria-current','page');
+ await page.goForward();
+ await expect(page.getByRole('button',{name:'Requests',exact:true})).toHaveAttribute('aria-current','page');
+ for(const [name,path] of [['My teams','teams'],['People','people'],['Roles','roles'],['Permissions','permissions'],['Team home office','team-home-office'],['My profile','profile']]){
+  await page.goto('/'+path);
+  await expect(page.getByRole('button',{name,exact:true})).toHaveAttribute('aria-current','page');
+ }
+ await page.goto('/#requests');
+ await expect(page).toHaveURL(/\/requests$/);
+ await page.goto('/missing-page');
+ await expect(page.getByRole('heading',{name:'Page not found'})).toBeVisible();
+ await page.getByRole('button',{name:'Go to overview'}).click();
+ await expect(page).toHaveURL(/\/overview$/);
+});

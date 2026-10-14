@@ -5,6 +5,7 @@ import React, {
   type FormEvent,
   type ReactNode,
 } from "react";
+import {pagePaths,pageFromLocation} from "./navigation";
 import { DataTable, type TableState } from "./DataTable";
 import { createRoot } from "react-dom/client";
 import {
@@ -191,7 +192,7 @@ function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
     [page, setPage] = useState(
-      location.hash === "#requests" ? "requests" : "overview",
+      pageFromLocation(),
     ),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
@@ -272,7 +273,7 @@ function App() {
       setDash(null);
       setTeams([]);
       setAudit([]);
-      setPage(location.hash === "#requests" ? "requests" : "overview");
+      setPage(pageFromLocation());
       setReady(true);
     };
     const requireEnrollment = () => { setFaceEnrolled(false); setModal(null); setEnrollmentUser(null); };
@@ -344,6 +345,12 @@ function App() {
     const id = setTimeout(() => setNotice(""), 5000);
     return () => clearTimeout(id);
   }, [notice]);
+  useEffect(()=>{
+    if(location.pathname==="/" || (location.pathname.endsWith("/")&&pagePaths[pageFromLocation()]))history.replaceState({},"",pagePaths[pageFromLocation()]||"/overview");
+    const sync=()=>{setPage(pageFromLocation());setModal(null);setError("");};
+    window.addEventListener("popstate",sync);
+    return()=>window.removeEventListener("popstate",sync);
+  },[]);
   async function submit(path: string, body: unknown, method = "POST") {
     await api(path, method, body);
     setModal(null);
@@ -352,6 +359,9 @@ function App() {
     setNotice("Saved successfully.");
   }
   function nav(p: string) {
+    if(!pagePaths[p])return;
+    if(location.pathname!==pagePaths[p])history.pushState({},"",pagePaths[p]);
+    setModal(null);
     setPage(p);
     setError("");
   }
@@ -632,7 +642,7 @@ function App() {
               setDash(null);
               setTeams([]);
               setAudit([]);
-              setPage(location.hash === "#requests" ? "requests" : "overview");
+              setPage(pageFromLocation());
             })
           }
         >
@@ -660,6 +670,7 @@ function App() {
               {notice}
             </div>
           )}
+          {!navigation.some(([id])=>id===page)&&<div className="card setting"><h2>{page==="not-found"?"Page not found":"Access unavailable"}</h2><p>{page==="not-found"?"This address does not match a workspace page.":"Your account does not have permission to open this page."}</p><button onClick={()=>nav("overview")}>Go to overview</button></div>}
           <div className="page-heading">
             <div>
               <span className="eyebrow">
@@ -1417,7 +1428,7 @@ function App() {
                     setTeams([]);
                     setAudit([]);
                     setPage(
-                      location.hash === "#requests" ? "requests" : "overview",
+                      pageFromLocation(),
                     );
                     setModal(null);
                   });
