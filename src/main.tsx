@@ -27,7 +27,7 @@ import {
 import "./style.css";
 import { CameraChallenge } from "./CameraChallenge";
 type User = {
-  role_id?: number; role_name?: string; permissions?: string[]; direct_permission_ids?: number[];
+  role_id?: number; role_name?: string; effective_permissions?: string[]; direct_permission_ids?: number[];
   slot_start?: string | null; slot_end?: string | null; slot_team_id?: number | null;
   id: number;
   name: string;
@@ -94,41 +94,45 @@ type Dashboard = {
   teams: { name: string; team_role: string }[];
 };
 type Page<T> = { data: T[]; current_page: number; last_page: number };
-type Permission = {id:number;name:string;slug:string;system:boolean};
-type AccessRole = {id:number;name:string;slug:string;system:boolean;permissions:Permission[]};
+type Permission = {id:number;name:string;display_name?:string;slug:string;system:boolean};
+type AccessRole = {id:number;name:string;display_name?:string;slug:string;system:boolean;permissions:Permission[]};
 type AttendancePage = Page<Attendance> & {summary?: Record<string,number>};
 const dhakaToday = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Dhaka",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 const minutesLabel = (value: number) => `${Math.floor(value/60)}h ${value%60}m`;
-let token = sessionStorage.getItem("ams_token") || "";
 const API = import.meta.env.VITE_API_URL || "/api";
 async function api<T>(
   path: string,
   method = "GET",
   body?: unknown,
 ): Promise<T> {
-  const requestToken = token;
   const form = body instanceof FormData;
-  const res = await fetch(API + path, {
+  const csrf = () => decodeURIComponent(document.cookie.split('; ').find(c=>c.startsWith('XSRF-TOKEN='))?.slice(11)||'');
+  const initializeCsrf = async () => {const r=await fetch(API+'/csrf-cookie',{credentials:'include',headers:{Accept:'application/json'}});if(!r.ok)throw new Error('Could not initialize secure login.');};
+  const mutation=!['GET','HEAD','OPTIONS'].includes(method);
+  if(mutation && !csrf())await initializeCsrf();
+  const send = () => fetch(API + path, {
     method,
+    credentials:"include",
     headers: {
       Accept: "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(mutation ? {"X-XSRF-TOKEN":csrf()} : {}),
       ...(!form && body ? { "Content-Type": "application/json" } : {}),
     },
     body: body ? (form ? body : JSON.stringify(body)) : undefined,
   });
+  let res=await send();
+  if(res.status===419 && mutation){await initializeCsrf();res=await send();}
   const data = await res.json();
   if (!res.ok) {
-    if (res.status === 401 && path !== "/login" && token === requestToken) {
-      sessionStorage.removeItem("ams_token");
+    if (res.status === 401 && path !== "/login") {
       window.dispatchEvent(new Event("ams-expired"));
     }
     if (data.face_enrollment_required) window.dispatchEvent(new Event("ams-enroll-required"));
-    throw new Error(
+    throw Object.assign(new Error(
       data.errors
         ? Object.values(data.errors).flat().join(" ")
         : data.message || "Request failed",
-    );
+    ),{status:res.status});
   }
   return data;
 }
@@ -152,7 +156,7 @@ const time = (s?: string | null) => {
   });
 };
 async function downloadDocument(id: number, name: string) {
- const response=await fetch(`${API}/applications/${id}/document`,{headers:{Authorization:`Bearer ${token}`}});
+ const response=await fetch(`${API}/applications/${id}/document`,{credentials:"include"});
  if(!response.ok) throw new Error("Could not download document.");
  const url=URL.createObjectURL(await response.blob()); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
@@ -217,7 +221,7 @@ function App() {
       }[]
     >([]),
     [faceEnrolled, setFaceEnrolled] = useState(false);
-  const can = (permission: string) => !!user && (user.role === "owner" || !!user.permissions?.includes(permission));
+  const can = (permission: string) => !!user && (user.role === "owner" || !!user.effective_permissions?.includes(permission));
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -232,7 +236,6 @@ function App() {
   }
   useEffect(() => {
     const expired = () => {
-      token = "";
       setUser(null);
       setFaceEnrolled(false);
       setModal(null);
@@ -248,15 +251,13 @@ function App() {
     const requireEnrollment = () => { setFaceEnrolled(false); setModal(null); setEnrollmentUser(null); };
     window.addEventListener("ams-enroll-required", requireEnrollment);
     window.addEventListener("ams-expired", expired);
-    if (token)
-      api<{ user: User; face_enrolled: boolean }>("/me")
+    api<{ user: User; face_enrolled: boolean }>("/me")
         .then((d) => {
           setUser(d.user);
           setFaceEnrolled(d.face_enrolled);
         })
-        .catch((e) => setError(e.message))
+        .catch((e) => {if(e.status!==401)setError(e.message);})
         .finally(() => setReady(true));
-    else setReady(true);
     return () => { window.removeEventListener("ams-expired", expired); window.removeEventListener("ams-enroll-required", requireEnrollment); };
   }, []);
   useEffect(() => {
@@ -363,13 +364,11 @@ function App() {
               e.preventDefault();
               const f = new FormData(e.currentTarget);
               run(async () => {
-                const d = await api<{ token: string; user: User }>(
+                await api<{ user: User }>(
                   "/login",
                   "POST",
                   Object.fromEntries(f),
                 );
-                token = d.token;
-                sessionStorage.setItem("ams_token", token);
                 const me = await api<{ user: User; face_enrolled: boolean }>("/me");
                 setFaceEnrolled(me.face_enrolled);
                 setUser(me.user);
@@ -414,7 +413,7 @@ function App() {
           setFaceEnrolled(true); setNotice(result.message); refresh((n) => n + 1);
         }} />
         <button className="text-button gate-signout" onClick={() => run(async () => {
-          await api("/logout", "POST"); token = ""; sessionStorage.removeItem("ams_token"); setUser(null); setFaceEnrolled(false); setError("");
+          await api("/logout", "POST"); setUser(null); setFaceEnrolled(false); setError("");
         })}>Sign out</button>
       </section>
     </div>
@@ -434,7 +433,7 @@ function App() {
     ...(can("teams.view") ? [["teams","My teams",Users] as [string,string,typeof Home]] : []),
     ...(can("users.view") ? [["people","People",Users] as [string,string,typeof Home]] : []),
     ...(can("leave_types.manage") || can("calendar.manage") || can("audit.view") ? [["settings","Workspace",Settings] as [string,string,typeof Home]] : []),
-    ...(user.role === "owner" ? [["access","Roles & permissions",ShieldCheck] as [string,string,typeof Home]] : []),
+    ...(user.role === "owner" ? [["roles","Roles",Users] as [string,string,typeof Home], ["permissions","Permissions",ShieldCheck] as [string,string,typeof Home]] : []),
   ];
   const requestCards = (items: Application[]) =>
     items.length ? (
@@ -595,9 +594,7 @@ function App() {
           onClick={() =>
             run(async () => {
               await api("/logout", "POST");
-              token = "";
-              sessionStorage.removeItem("ams_token");
-              setUser(null);
+                              setUser(null);
               setPeople([]);
               setRequests(null);
               setAtt(null);
@@ -1174,12 +1171,15 @@ function App() {
               </div>
             </>
           )}
-          {page==="access" && user.role==="owner" && <>
-            <div className="section-heading"><h2>Roles & permissions</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-role");}}>Create role</button><button onClick={()=>{setAccessEdit(null);setModal("access-permission");}}>Create permission</button></div>
+          {page==="roles" && user.role==="owner" && <>
+            <div className="section-heading"><h2>Roles</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-role");}}>Create role</button></div>
             <p>Each user has one role, plus optional direct permissions. Effective access is the union of both. Owner always has full access. Team membership does not grant account permissions.</p>
-            <div className="request-grid">{accessRoles.map(r=><div className="card setting" key={r.id}><h2>{r.name}</h2><small>{r.slug} · {r.system?"Initial role":"Custom role"}</small><p>{r.slug==="owner"?"All permissions automatically":r.permissions.map(p=>p.name).join(", ")||"No permissions"}</p>{r.slug!=="owner" && <button onClick={()=>{setAccessEdit(r);setModal("access-role");}}>Edit role</button>}{!r.system && <button onClick={()=>{if(confirm(`Delete role ${r.name}? Reassign its users first.`))run(()=>submit(`/roles/${r.id}`,undefined,"DELETE"));}}>Delete role</button>}</div>)}</div>
-            <h2 className="section-title">Permissions</h2><p>Built-in keys protect existing features. Custom keys can be attached to new features through the backend permission middleware.</p>
-            <div className="card">{permissions.map(p=><div className="policy-row" key={p.id}><span><strong>{p.name}</strong><small>{p.slug}</small></span><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system && <button onClick={()=>{if(confirm(`Delete ${p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>)}</div>
+            <div className="request-grid">{accessRoles.map(r=><div className="card setting" key={r.id}><h2>{r.display_name || r.name}</h2><small>{r.slug} · {r.system?"Initial role":"Custom role"}</small><p>{r.slug==="owner"?"All permissions automatically":r.permissions.map(p=>p.display_name || p.name).join(", ")||"No permissions"}</p>{r.slug!=="owner" && <button onClick={()=>{setAccessEdit(r);setModal("access-role");}}>Edit role</button>}{!r.system && <button onClick={()=>{if(confirm(`Delete role ${r.display_name || r.name}? Reassign its users first.`))run(()=>submit(`/roles/${r.id}`,undefined,"DELETE"));}}>Delete role</button>}</div>)}</div>
+          </>}
+          {page==="permissions" && user.role==="owner" && <>
+            <div className="section-heading"><h2>Permissions</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-permission");}}>Create permission</button></div>
+            <p>Built-in keys protect existing features. Custom keys can be attached to new features through the backend permission middleware.</p>
+            <div className="card">{permissions.map(p=><div className="policy-row" key={p.id}><span><strong>{p.display_name || p.name}</strong><small>{p.slug}</small></span><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system && <button onClick={()=>{if(confirm(`Delete ${p.display_name || p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>)}</div>
           </>}
           <footer className="page-footer">
             attendance<span>Built around your working day.</span>
@@ -1252,13 +1252,13 @@ function App() {
               />
             ) : modal === "user-access" && editing ? (
               <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(()=>submit(`/users/${editing.id}/access`,{role_id:Number(f.get("role_id")),permission_ids:f.getAll("permission_ids").map(Number)},"PUT"));}}>
-                <h3>{editing.name}</h3><Field title="Assigned role"><select name="role_id" aria-label="Assigned role" defaultValue={editing.role_id} required>{accessRoles.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}</select></Field>
+                <h3>{editing.name}</h3><Field title="Assigned role"><select name="role_id" aria-label="Assigned role" defaultValue={editing.role_id} required>{accessRoles.map(r=><option key={r.id} value={r.id}>{r.display_name || r.name}</option>)}</select></Field>
                 <h3>Additional user permissions</h3><p>These add to the role's permissions; unchecking removes only the direct grant.</p><PermissionChoices permissions={permissions} selected={editing.direct_permission_ids||[]} />
                 <button className="primary wide" disabled={busy}>Save user access</button>
               </form>
             ) : modal === "access-role" || modal === "access-permission" ? (
               <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const isRole=modal==="access-role";run(()=>submit(`/${isRole?"roles":"permissions"}${accessEdit?`/${accessEdit.id}`:""}`,{name:f.get("name"),slug:f.get("slug"),...(isRole?{permission_ids:f.getAll("permission_ids").map(Number)}:{})},accessEdit?"PUT":"POST"));}}>
-                <Field title="Display name"><input name="name" required maxLength={100} defaultValue={accessEdit?.name} /></Field><Field title="Permission or role key"><input name="slug" required readOnly={accessEdit?.system} pattern={modal==="access-role"?"[a-z][a-z0-9_]*":"[a-z][a-z0-9_.]*"} defaultValue={accessEdit?.slug} placeholder={modal==="access-role"?"custom_role":"feature.action"} /></Field>
+                <Field title="Display name"><input name="name" required maxLength={100} defaultValue={accessEdit?.display_name || accessEdit?.name} /></Field><Field title="Permission or role key"><input name="slug" required readOnly={accessEdit?.system} pattern={modal==="access-role"?"[a-z][a-z0-9_]*":"[a-z][a-z0-9_.]*"} defaultValue={accessEdit?.slug} placeholder={modal==="access-role"?"custom_role":"feature.action"} /></Field>
                 {modal==="access-role" && <PermissionChoices permissions={permissions} selected={accessEdit && "permissions" in accessEdit ? accessEdit.permissions.map(p=>p.id):[]} />}
                 <button className="primary wide" disabled={busy}>Save {modal==="access-role"?"role":"permission"}</button>
               </form>
@@ -1308,7 +1308,7 @@ function App() {
                       name="role"
                       defaultValue={editing?.role || "employee"}
                     >
-                      {(user.role === "owner" ? accessRoles : [{id:0,slug:editing?.role||"employee",name:editing?.role_name||"Members"}]).map(r=><option key={r.id} value={r.slug}>{r.name}</option>)}
+                      {(user.role === "owner" ? accessRoles : [{id:0,slug:editing?.role||"employee",name:editing?.role_name||"Members",display_name:editing?.role_name||"Members"}]).map(r=><option key={r.id} value={r.slug}>{r.display_name || r.name}</option>)}
                     </select>
                   </Field>
                   <Field title="Status">
@@ -1392,7 +1392,7 @@ function App() {
                           ?.team_role || "employee"
                       }
                     >
-                      {accessRoles.map(r=><option key={r.id} value={r.slug}>{r.name}</option>)}
+                      {accessRoles.map(r=><option key={r.id} value={r.slug}>{r.display_name || r.name}</option>)}
                     </select>
                   </div>
                 ))}
@@ -1407,9 +1407,7 @@ function App() {
                   const d = Object.fromEntries(new FormData(e.currentTarget));
                   run(async () => {
                     await api("/password", "PUT", d);
-                    token = "";
-                    sessionStorage.removeItem("ams_token");
-                    setUser(null);
+                                                setUser(null);
                     setPeople([]);
                     setRequests(null);
                     setAtt(null);
@@ -1539,7 +1537,7 @@ function Pager({
   ) : null;
 }
 function PermissionChoices({permissions,selected}:{permissions:Permission[];selected:number[]}) {
- return <div className="permission-choices">{permissions.map(p=><label key={p.id}><input name="permission_ids" type="checkbox" value={p.id} defaultChecked={selected.includes(p.id)} /><span>{p.name}<small>{p.slug}</small></span></label>)}</div>;
+ return <div className="permission-choices">{permissions.map(p=><label key={p.id}><input name="permission_ids" type="checkbox" value={p.id} defaultChecked={selected.includes(p.id)} /><span>{p.display_name || p.name}<small>{p.slug}</small></span></label>)}</div>;
 }
 function DocumentUpload({required}: {required: boolean}) {
  const input=useRef<HTMLInputElement>(null);

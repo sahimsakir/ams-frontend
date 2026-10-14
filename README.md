@@ -103,4 +103,12 @@ Owners edit individual slots in People → Work slot and team slots in Teams →
 
 ### Roles and permissions
 
-Owner → Roles & permissions creates/edits custom roles and permission definitions. People → Role & permissions assigns one account role plus additive direct user grants. Initial display roles: Owner, Management, Project Manager, Team Lead, Members. Menus/actions use effective permissions; APIs enforce grants and data scope. Custom permission keys are reusable by new features, but their routes must explicitly use the backend middleware. Initial role/permission keys and Owner access are protected. Existing account assignments migrate automatically; pull both repositories, run the backend migration and restart the frontend.
+Owner → Roles creates/edits custom roles; Owner → Permissions manages permission definitions. People → Role & permissions assigns one account role plus additive direct user grants. Initial display roles: Owner, Management, Project Manager, Team Lead, Members. Menus/actions use effective permissions; APIs enforce grants and data scope. Custom permission keys are reusable by new features, but their routes must explicitly use the backend middleware. Initial role/permission keys and Owner access are protected. Existing account assignments migrate automatically; pull both repositories, run the backend migration and restart the frontend.
+
+### Passport cookie login
+
+The backend now uses Spatie Laravel Permission and Passport. Keep `VITE_API_URL=/api` and use the existing Vite proxy; production should serve frontend and `/api` on one origin. Fetches include browser credentials and CSRF headers. Login does not return an access token to JavaScript, and no local/session storage token is used. Document downloads also authenticate via the HttpOnly cookie. Roles and Permissions are separate menus. API user data exposes `effective_permissions`; definition labels use `display_name`.
+
+Pull both repositories, run backend migrations and `php artisan ams:auth-setup` as documented in the backend README, restart API/worker and frontend, then sign in again. Use HTTPS with `SESSION_SECURE_COOKIE=true` in production (false for local HTTP development). Preserve APP_KEY and Passport keys; no reseeding is needed.
+
+The real cookie login test in `tests/cookie-login.spec.ts` runs only with `RUN_REAL_AUTH=1` against a prepared development backend with the integration fixture; normal `npm test` uses API mocks and skips it. It verifies real CSRF rejection, Passport HttpOnly flags, persistence across reload, logout, and absence of bearer headers/storage tokens.

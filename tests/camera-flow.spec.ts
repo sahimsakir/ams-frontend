@@ -9,11 +9,10 @@ async function workspace(page: Page, owner = false) {
   let attendance: null | Record<string, unknown> = null;
   let purpose = "enroll", step = 0, session = 0;
   let retryOnce = true;
-  const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true, permissions: ["dashboard.view","attendance.view","attendance.record","applications.view","applications.create","teams.view","leave_types.view","calendar.view"] };
+  const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true, effective_permissions: ["dashboard.view","attendance.view","attendance.record","applications.view","applications.create","teams.view","leave_types.view","calendar.view"] };
   const challenges: string[] = [];
   const steps = () => purpose === "enroll" ? ["front", "left", "right"] : ["capture"];
   const challenge = () => ({ id: `session-${session}`, step, total: steps().length, pose: steps()[step] || null, nonce: `nonce-${step}`, complete: step === steps().length, expires_at: new Date(Date.now() + 600000).toISOString() });
-  await page.addInitScript(() => sessionStorage.setItem("ams_token", "test-token"));
   await page.route("**/api/**", async (route) => {
     const req = route.request(), path = new URL(req.url()).pathname;
     let value: unknown = {};
@@ -245,8 +244,9 @@ test('owner creates custom role and assigns direct user permissions',async({page
  await page.route('**/api/permissions',r=>r.fulfill({json:permissions}));
  await page.route('**/api/users',r=>r.fulfill({json:[{id:2,name:'New Employee',email:'new@example.com',role:'employee',role_id:5,role_name:'Members',active:true,direct_permission_ids:[]}]}));
  await page.reload();
- await page.getByRole('button',{name:'Roles & permissions',exact:true}).click();
+ await page.getByRole('button',{name:'Roles',exact:true}).click();
  await expect(page.getByRole('heading',{name:'People Reader',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Create permission',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Create role',exact:true}).click();
  await page.getByLabel('Display name').fill('Calendar Editor');
  await page.getByLabel('Permission or role key').fill('calendar_editor');
@@ -262,16 +262,21 @@ test('owner creates custom role and assigns direct user permissions',async({page
  const assign=page.waitForRequest(r=>r.url().endsWith('/api/users/2/access')&&r.method()==='PUT');
  await page.getByRole('button',{name:'Save user access'}).click();
  expect((await assign).postDataJSON()).toEqual({role_id:6,permission_ids:[2]});
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.getByRole('button',{name:'Permissions',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Create permission',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Create role',exact:true})).toHaveCount(0);
+ await expect(page.getByText('View people',{exact:true})).toBeVisible();
 });
 
 test('custom read-only role only sees granted features and cannot punch',async({page})=>{
  await workspace(page,true);
- await page.route('**/api/me',r=>r.fulfill({json:{user:{id:1,name:'Reader',email:'reader@example.com',role:'reader',role_id:6,role_name:'Reader',permissions:['attendance.view'],active:true},face_enrolled:true}}));
+ await page.route('**/api/me',r=>r.fulfill({json:{user:{id:1,name:'Reader',email:'reader@example.com',role:'reader',role_id:6,role_name:'Reader',effective_permissions:['attendance.view'],active:true},face_enrolled:true}}));
  await page.reload();
  await expect(page.getByRole('button',{name:'Attendance',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'People',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Requests',exact:true})).toHaveCount(0);
- await expect(page.getByRole('button',{name:'Roles & permissions',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Roles',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Attendance',exact:true}).click();
  await expect(page.getByRole('button',{name:'Check in',exact:true})).toBeDisabled();
  await expect(page.getByRole('button',{name:'Check out',exact:true})).toBeDisabled();

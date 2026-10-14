@@ -1,0 +1,26 @@
+import {test,expect} from '@playwright/test';
+test('real Passport cookie login, CSRF, reload and logout',async({page,context})=>{
+ test.skip(!process.env.RUN_REAL_AUTH,'Requires the temporary real backend integration runner.');
+ const authHeaders:string[]=[];
+ page.on('request',r=>{if(r.url().includes('/api/'))authHeaders.push(r.headers()['authorization']||'');});
+ await page.goto('/');
+ await expect(page.getByRole('button',{name:/Sign in/i})).toBeVisible();
+ const missingCsrf=await page.evaluate(async()=>{const r=await fetch('/api/login',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json',Accept:'application/json'},body:JSON.stringify({email:'integration@example.com',password:'integration-password-123'})});return r.status;});
+ expect(missingCsrf).toBe(419);
+ await page.getByLabel('Work email').fill('integration@example.com');
+ await page.getByLabel('Password',{exact:true}).fill('integration-password-123');
+ const response=page.waitForResponse(r=>r.url().endsWith('/api/login')&&r.status()===200);
+ await page.getByRole('button',{name:/Sign in/i}).click();
+ expect(await (await response).json()).not.toHaveProperty('token');
+ await expect(page.getByRole('button',{name:'Roles',exact:true})).toBeVisible();
+ const cookies=await context.cookies();const auth=cookies.find(c=>c.name==='ams_auth');
+ expect(auth?.httpOnly).toBe(true);expect(auth?.sameSite).toBe('Lax');
+ expect(await page.evaluate(()=>document.cookie.includes('ams_auth='))).toBe(false);
+ expect(await page.evaluate(()=>sessionStorage.getItem('ams_token')||localStorage.getItem('ams_token'))).toBeNull();
+ await page.reload();
+ await expect(page.getByRole('button',{name:'Permissions',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Sign out/i}).click();
+ await expect(page.getByRole('button',{name:/Sign in/i})).toBeVisible();
+ expect((await context.cookies()).some(c=>c.name==='ams_auth')).toBe(false);
+ expect(authHeaders.every(v=>!v)).toBe(true);
+});
