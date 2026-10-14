@@ -208,3 +208,31 @@ test("responsive leave and overtime forms submit multipart documents without Sla
  const body=(await overtime).postData()||'';
  expect(body).toContain('name="document"'); expect(body).toContain('2026-10-20');
 });
+
+test('monthly attendance filters, summary cards and owner work slots', async ({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await workspace(page,true);
+ const queries:string[]=[];
+ await page.route('**/api/attendance?**',async r=>{
+  queries.push(r.request().url());
+  await r.fulfill({json:{data:[{id:1,user_id:2,name:'New Employee',work_date:'2026-10-13',check_in:'2026-10-13T03:00:00Z',check_out:null,mode:'office',status:'missing_exit',slot_start:'09:00',slot_end:'18:00'},{id:'leave-2',user_id:2,name:'New Employee',work_date:'2026-10-12',check_in:null,check_out:null,mode:'leave',status:'leave',leave_name:'Casual',slot_start:'09:00',slot_end:'18:00'}],current_page:1,last_page:1,summary:{working_days:10,late_days:1,leave_days:1,home_office_days:0,missing_exits:1,avg_working_minutes:549,actual_avg_minutes:539,early_arrival_avg_minutes:2,late_departure_avg_minutes:7,early_arrival_days:7,late_departure_days:9,late_percent:10,leave_percent:10,home_office_percent:0}}});
+ });
+ await page.reload();
+ await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await expect(page.getByText('9h 9m',{exact:true})).toBeVisible();
+ await expect(page.getByText('8h 59m',{exact:true})).toBeVisible();
+ await expect(page.locator('tbody')).toContainText('Missing exit');
+ await expect(page.locator('tbody')).toContainText('Casual');
+ await page.getByLabel('Start date',{exact:true}).fill('2026-10-01');
+ await page.getByLabel('End date',{exact:true}).fill('2026-10-14');
+ await page.getByLabel('Employee',{exact:true}).selectOption('2');
+ await expect.poll(()=>queries.some(u=>u.includes('start_date=2026-10-01')&&u.includes('end_date=2026-10-14')&&u.includes('user_id=2'))).toBe(true);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByRole('button',{name:'People',exact:true}).click();
+ await page.getByRole('button',{name:'Work slot',exact:true}).click();
+ await page.getByLabel('Slot start',{exact:true}).fill('10:00');
+ await page.getByLabel('Slot end',{exact:true}).fill('19:00');
+ const slot=page.waitForRequest(r=>r.url().endsWith('/api/work-slots/users/2')&&r.method()==='PUT');
+ await page.getByRole('button',{name:'Save work slot'}).click();
+ expect((await slot).postDataJSON()).toMatchObject({slot_start:'10:00',slot_end:'19:00'});
+});

@@ -27,6 +27,7 @@ import {
 import "./style.css";
 import { CameraChallenge } from "./CameraChallenge";
 type User = {
+  slot_start?: string | null; slot_end?: string | null; slot_team_id?: number | null;
   id: number;
   name: string;
   email: string;
@@ -69,6 +70,7 @@ type Application = {
   approvals: Approval[];
 };
 type Attendance = {
+  status?: string; leave_name?: string; slot_start?: string; slot_end?: string; working_minutes?: number | null; actual_minutes?: number | null;
   id: number;
   user_id: number;
   name: string;
@@ -78,6 +80,7 @@ type Attendance = {
   mode: string;
 };
 type Team = {
+  slot_start?: string | null; slot_end?: string | null;
   id: number;
   name: string;
   members: { id: number; name: string; team_role: string }[];
@@ -90,6 +93,9 @@ type Dashboard = {
   teams: { name: string; team_role: string }[];
 };
 type Page<T> = { data: T[]; current_page: number; last_page: number };
+type AttendancePage = Page<Attendance> & {summary?: Record<string,number>};
+const dhakaToday = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Dhaka",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
+const minutesLabel = (value: number) => `${Math.floor(value/60)}h ${value%60}m`;
 let token = sessionStorage.getItem("ams_token") || "";
 const API = import.meta.env.VITE_API_URL || "/api";
 async function api<T>(
@@ -179,7 +185,11 @@ function App() {
     [revision, refresh] = useState(0),
     [dash, setDash] = useState<Dashboard | null>(null),
     [requests, setRequests] = useState<Page<Application> | null>(null),
-    [att, setAtt] = useState<Page<Attendance> | null>(null),
+    [att, setAtt] = useState<AttendancePage | null>(null),
+    [reportStart,setReportStart] = useState(() => dhakaToday().slice(0,7)+"-01"),
+    [reportEnd,setReportEnd] = useState(dhakaToday),
+    [reportUser,setReportUser] = useState(""),
+    [slotTarget,setSlotTarget] = useState<{kind:"users"|"teams";id:number;name:string;slot_start?:string|null;slot_end?:string|null;slot_team_id?:number|null}|null>(null),
     [teams, setTeams] = useState<Team[]>([]),
     [people, setPeople] = useState<User[]>([]),
     [leaves, setLeaves] = useState<Leave[]>([]),
@@ -248,7 +258,7 @@ function App() {
     Promise.all([
       api<Dashboard>("/dashboard"),
       api<Page<Application>>(`/applications?page=${reqPage}`),
-      api<Page<Attendance>>(`/attendance?page=${attPage}`),
+      api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}`),
       api<Team[]>("/teams"),
       api<Leave[]>("/leave-types"),
       api<Day[]>("/calendar"),
@@ -289,7 +299,7 @@ function App() {
     return () => {
       alive = false;
     };
-  }, [user, faceEnrolled, revision, reqPage, attPage]);
+  }, [user, faceEnrolled, revision, reqPage, attPage, reportStart, reportEnd, reportUser]);
   useEffect(() => {
     if (!notice) return;
     const id = setTimeout(() => setNotice(""), 5000);
@@ -903,6 +913,23 @@ function App() {
                   </button>
                 </div>
               </div>
+              <div className="report-filters card">
+                <Field title="Start date"><input type="date" value={reportStart} max={reportEnd} onChange={e=>{if(e.target.value){setReportStart(e.target.value);setAttPage(1);}}} /></Field>
+                <Field title="End date"><input type="date" value={reportEnd} min={reportStart} onChange={e=>{if(e.target.value){setReportEnd(e.target.value);setAttPage(1);}}} /></Field>
+                {user.role==="owner" && <Field title="Employee"><select aria-label="Employee" value={reportUser} onChange={e=>{setReportUser(e.target.value);setAttPage(1);}}><option value="">Everyone</option>{people.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>}
+                <button onClick={()=>{setReportStart(dhakaToday().slice(0,7)+"-01");setReportEnd(dhakaToday());setAttPage(1);}}>Current month</button>
+              </div>
+              {att?.summary && <div className="attendance-stats">{[
+                ["Late days",`${att.summary.late_days} / ${att.summary.working_days}`,`${att.summary.late_percent}% late rate`],
+                ["Leave days",`${att.summary.leave_days} / ${att.summary.working_days}`,`${att.summary.leave_percent}% leave rate`],
+                ["Home office",`${att.summary.home_office_days} / ${att.summary.working_days}`,`${att.summary.home_office_percent}% home office`],
+                ["Avg working hours",minutesLabel(att.summary.avg_working_minutes),"Check-in to checkout · completed days"],
+                ["Actual avg hours",minutesLabel(att.summary.actual_avg_minutes),"Inside assigned slot · completed days"],
+                ["Early arrival avg",minutesLabel(att.summary.early_arrival_avg_minutes),`${att.summary.early_arrival_days} early days · all check-ins average`],
+                ["Late departure avg",minutesLabel(att.summary.late_departure_avg_minutes),`${att.summary.late_departure_days} late departures · completed days average`],
+                ["Missing exit",String(att.summary.missing_exits),"No checkout by local midnight"],
+              ].map(([title,value,hint])=><div className="card attendance-stat" key={title}><h3>{title}</h3><strong>{value}</strong><p>{hint}</p></div>)}</div>}
+              <p className="muted">Slots default to 09:00–18:00. Missing exits and current open shifts are excluded from hour averages. Rates use working days through today; owner totals count employee-days.</p>
               <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
                 <table>
                   <thead>
@@ -911,7 +938,7 @@ function App() {
                       <th>Date</th>
                       <th>Check in</th>
                       <th>Check out</th>
-                      <th>Workplace</th>
+                      <th>Workplace / leave</th><th>Status</th><th>Work slot</th><th>Hours / inside slot</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -922,10 +949,10 @@ function App() {
                         </td>
                         <td>{date(a.work_date)}</td>
                         <td>{time(a.check_in)}</td>
-                        <td>{time(a.check_out)}</td>
+                        <td>{a.status==="missing_exit" ? "Missing exit" : time(a.check_out)}</td>
                         <td>
-                          <Badge value={a.mode} />
-                        </td>
+                          <Badge value={a.mode} />{a.leave_name && <small>{a.leave_name}</small>}
+                        </td><td>{label(a.status || "")}</td><td>{a.slot_start}–{a.slot_end}</td><td>{a.working_minutes==null?"—":minutesLabel(a.working_minutes)} / {a.actual_minutes==null?"—":minutesLabel(a.actual_minutes)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -954,6 +981,8 @@ function App() {
                       <Building2 size={24} />
                     </span>
                     <h2>{t.name}</h2>
+<p>Work slot: {t.slot_start?.slice(0,5)||"09:00"}–{t.slot_end?.slice(0,5)||"18:00"}</p>
+                    {user.role==="owner" && <button onClick={()=>{setSlotTarget({kind:"teams",...t});setModal("slot");}}>Edit work slot</button>}
                     <p>{t.members.length} people · connected across roles</p>
                     {t.members.map((m) => (
                       <div className="member" key={m.id}>
@@ -1029,6 +1058,7 @@ function App() {
                             >
                               Edit
                             </button>
+<button onClick={()=>{setSlotTarget({kind:"users",...p});setModal("slot");}}>Work slot</button>
                             {p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
                             {!p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
                             {p.face_reset_available && (
@@ -1202,6 +1232,13 @@ function App() {
                 busy={busy}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "slot" && slotTarget ? (
+              <form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(()=>submit(`/work-slots/${slotTarget.kind}/${slotTarget.id}`,{slot_start:f.slot_start||null,slot_end:f.slot_end||null,slot_team_id:f.slot_team_id||null},"PUT"));}}>
+                <h3>{slotTarget.name}</h3><p>Asia/Dhaka, same-day slots. Blank times inherit the team slot or default 09:00–18:00. Changes apply to future check-ins.</p>
+                <div className="two"><Field title="Slot start"><input type="time" name="slot_start" defaultValue={slotTarget.slot_start?.slice(0,5)||""} /></Field><Field title="Slot end"><input type="time" name="slot_end" defaultValue={slotTarget.slot_end?.slice(0,5)||""} /></Field></div>
+                {slotTarget.kind==="users" && <Field title="Team slot to inherit"><select name="slot_team_id" defaultValue={slotTarget.slot_team_id||""}><option value="">First configured team (lowest ID), then default</option>{teams.filter(t=>t.members.some(m=>m.id===slotTarget.id)).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>}
+                <button className="primary wide" disabled={busy}>Save work slot</button>
+              </form>
             ) : modal === "import" ? (
               <form onSubmit={(e) => { e.preventDefault(); const f=new FormData(e.currentTarget); run(() => submit("/users/import",f)); }}>
                 <p>Import up to 500 new users. Existing emails are rejected; all rows must be valid before any users are created.</p>

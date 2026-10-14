@@ -1161,3 +1161,13 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 .upload-selected small { display:block; margin-top:4px; color:#66758a; }
 .upload-selected button { flex-shrink:0; }
 .upload-error { color:#b42318; }
+
+.report-filters { display:flex; align-items:end; flex-wrap:wrap; gap:16px; padding:20px; margin-bottom:20px; }
+.report-filters .field { flex:1; min-width:170px; margin:0; }
+.attendance-stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; margin-bottom:20px; }
+.attendance-stat { padding:20px; background:#f1f7fd; }
+.attendance-stat h3 { font-size:13px; text-transform:uppercase; color:#64748b; margin:0 0 20px; }
+.attendance-stat strong { font-size:26px; color:#3988d1; }
+.attendance-stat p { font-size:13px; margin:8px 0 0; }
+@media(max-width:1000px){.attendance-stats{grid-template-columns:repeat(2,minmax(0,1fr));}}
+@media(max-width:420px){.attendance-stat{padding:14px;}.attendance-stat strong{font-size:21px;}.report-filters .field{min-width:100%;}}

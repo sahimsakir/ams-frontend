@@ -94,3 +94,9 @@ For this frontend timing update, pull the frontend repository and restart Vite, 
 Leave and overtime use numbered sections, date summaries, private document uploads and applicant/review cards without a Slack field. Owners manage leave types in Settings and users/CSV imports in People. Download the CSV template from the import dialog. Deletions retain historical records; user self-deletion and deletion with pending work are blocked.
 
 Pull both repositories for this release. Run the backend migration and rebuild api/worker as documented in the backend README, then run `npm ci` and `npm run dev` here.
+
+### Monthly attendance and work slots
+
+Attendance has current-month date filters, office/home/leave details and eight summary cards. Owners can select an employee or view everyone. All other roles see only themselves. Missing exits appear after local midnight and do not block the next day's check-in. Hour averages exclude unfinished shifts; actual hours count only the assigned slot (default 09:00–18:00), with no break deduction.
+
+Owners edit individual slots in People → Work slot and team slots in Teams → Edit work slot. Individual times override inherited teams; choose a member team explicitly or use the first configured team. Changes apply to future check-ins. Pull both repos and run the backend migration for this release.
