@@ -112,3 +112,11 @@ The backend now uses Spatie Laravel Permission and Passport. Keep `VITE_API_URL=
 Pull both repositories, run backend migrations and `php artisan ams:auth-setup` as documented in the backend README, restart API/worker and frontend, then sign in again. Use HTTPS with `SESSION_SECURE_COOKIE=true` in production (false for local HTTP development). Preserve APP_KEY and Passport keys; no reseeding is needed.
 
 The real cookie login test in `tests/cookie-login.spec.ts` runs only with `RUN_REAL_AUTH=1` against a prepared development backend with the integration fixture; normal `npm test` uses API mocks and skips it. It verifies real CSRF rejection, Passport HttpOnly flags, persistence across reload, logout, and absence of bearer headers/storage tokens.
+
+### Compact permissions and spreadsheet-style tables
+
+Permissions uses a compact table with separate label, key, type and action columns. Attendance, People, Audit, Permissions and Team home office share column menus with ascending/descending sort, Contains text, search/select values and clear/reset controls. Attendance and audit filter/sort across the full scoped dataset before pagination; other lists filter locally over all loaded records. Action columns do not offer meaningless record filters. Menus stay within the mobile viewport. Summary cards follow date/employee filters; column filters affect table rows. New request appears only on Overview and Requests for users with application-create permission.
+
+### Team home-office assignments
+
+Owner and users granted `home_office.manage` get Team home office → Assign home office. Choose one team or All teams, first/last dates and a reason. One-day or longer inclusive ranges are supported, without the personal application's one-year cap. All teams excludes users without a team. Current team membership applies at check-in. Assignment directly authorizes home office; members still perform face check-in/out. Cancel assignment retains historical attendance; overlapping assignments remain effective until individually cancelled. Grant this permission through Roles or People → Role & permissions.

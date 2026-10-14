@@ -53,6 +53,7 @@ async function workspace(page: Page, owner = false) {
       value = { message: action === "in" ? "Checked in successfully" : "Checked out successfully", attendance };
     } else if (["/api/applications", "/api/attendance"].includes(path)) value = { data: attendance && path === "/api/attendance" ? [attendance] : [], current_page: 1, last_page: 1 };
     else if (path === "/api/users") value = [{ id: 2, name: "New Employee", email: "new@example.com", role: "employee", active: true, face_enrolled: targetEnrolled }];
+    else if (path === "/api/team-home-office") value = {data:[],teams:[]};
     else if (path === "/api/audit") value = { data: [], current_page: 1, last_page: 1 };
     else value = [];
     await route.fulfill({ json: value });
@@ -280,4 +281,37 @@ test('custom read-only role only sees granted features and cannot punch',async({
  await page.getByRole('button',{name:'Attendance',exact:true}).click();
  await expect(page.getByRole('button',{name:'Check in',exact:true})).toBeDisabled();
  await expect(page.getByRole('button',{name:'Check out',exact:true})).toBeDisabled();
+});
+
+test('permission table filters and sorting; requests only on correct pages',async({page})=>{
+ await page.setViewportSize({width:390,height:844});await workspace(page,true);
+ await page.route('**/api/permissions',r=>r.fulfill({json:[{id:1,name:'zeta.view',display_name:'Zeta view',slug:'zeta.view',system:true},{id:2,name:'alpha.view',display_name:'Alpha view',slug:'alpha.view',system:false}]}));
+ await page.reload();await expect(page.getByRole('button',{name:'New request',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'Permissions',exact:true}).click();
+ await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Filter and sort Permission',exact:true}).click();
+ await page.getByRole('button',{name:'Sort ascending',exact:true}).click();
+ await expect(page.locator('tbody tr').first()).toContainText('Alpha view');
+ await page.getByRole('button',{name:'Filter and sort Type',exact:true}).click();
+ await page.getByLabel('Select all',{exact:true}).uncheck();await page.getByRole('checkbox',{name:'Custom',exact:true}).check();
+ await page.getByRole('button',{name:'Apply filter',exact:true}).click();
+ await expect(page.locator('tbody tr')).toHaveCount(1);await expect(page.locator('tbody')).toContainText('Alpha view');
+ await page.getByRole('button',{name:'Clear filters & sorting',exact:true}).click();await expect(page.locator('tbody tr')).toHaveCount(2);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByRole('button',{name:'Requests',exact:true}).click();await expect(page.getByRole('button',{name:'New request',exact:true})).toBeVisible();
+ await page.getByRole('button',{name:'People',exact:true}).click();await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
+});
+
+test('owner assigns one team or all teams home office by date range',async({page})=>{
+ await workspace(page,true);
+ await page.route('**/api/team-home-office',r=>r.fulfill({json:{data:[],teams:[{id:4,name:'Engineering'}]}}));
+ await page.reload();await page.getByRole('button',{name:'Team home office',exact:true}).click();
+ await page.getByRole('button',{name:'Assign home office',exact:true}).click();
+ await page.getByLabel('Team',{exact:true}).selectOption('4');
+ await page.getByLabel('First day',{exact:true}).fill('2026-10-20');await page.getByLabel('Last day',{exact:true}).fill('2026-10-25');
+ await page.getByLabel('Reason',{exact:true}).fill('Office maintenance');
+ const submitted=page.waitForRequest(r=>r.url().endsWith('/api/team-home-office')&&r.method()==='POST');
+ await page.getByRole('button',{name:'Save home-office assignment',exact:true}).click();
+ expect((await submitted).postDataJSON()).toMatchObject({team_id:4,start_date:'2026-10-20',end_date:'2026-10-25'});
+ await expect(page.getByRole('dialog')).toHaveCount(0);
 });

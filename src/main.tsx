@@ -5,6 +5,7 @@ import React, {
   type FormEvent,
   type ReactNode,
 } from "react";
+import { DataTable, type TableState } from "./DataTable";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
@@ -96,7 +97,9 @@ type Dashboard = {
 type Page<T> = { data: T[]; current_page: number; last_page: number };
 type Permission = {id:number;name:string;display_name?:string;slug:string;system:boolean};
 type AccessRole = {id:number;name:string;display_name?:string;slug:string;system:boolean;permissions:Permission[]};
-type AttendancePage = Page<Attendance> & {summary?: Record<string,number>};
+type Audit={id:number;name:string;action:string;subject:string;created_at:string};
+type TeamHome={id:number;team_id:number|null;team_name:string|null;start_date:string;end_date:string;reason:string;creator:string;cancelled_at:string|null};
+type AttendancePage = Page<Attendance> & {facets?:Record<string,string[]>;total?:number;summary?: Record<string,number>};
 const dhakaToday = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Dhaka",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 const minutesLabel = (value: number) => `${Math.floor(value/60)}h ${value%60}m`;
 const API = import.meta.env.VITE_API_URL || "/api";
@@ -200,6 +203,11 @@ function App() {
     [accessRoles,setAccessRoles] = useState<AccessRole[]>([]),
     [permissions,setPermissions] = useState<Permission[]>([]),
     [accessEdit,setAccessEdit] = useState<AccessRole|Permission|null>(null),
+    [attendanceTable,setAttendanceTable] = useState<TableState>({filters:{}}),
+    [auditTable,setAuditTable] = useState<TableState>({filters:{}}),
+    [auditPage,setAuditPage] = useState(1),
+    [auditMeta,setAuditMeta] = useState<(Page<Audit> & {facets?:Record<string,string[]>;total?:number})|null>(null),
+    [teamHome,setTeamHome] = useState<{data:TeamHome[];teams:{id:number;name:string}[]}>({data:[],teams:[]}),
     [teams, setTeams] = useState<Team[]>([]),
     [people, setPeople] = useState<User[]>([]),
     [leaves, setLeaves] = useState<Leave[]>([]),
@@ -266,17 +274,15 @@ function App() {
     Promise.all([
       can("dashboard.view") ? api<Dashboard>("/dashboard") : Promise.resolve(null),
       can("applications.view") ? api<Page<Application>>(`/applications?page=${reqPage}`) : Promise.resolve(null),
-      can("attendance.view") ? api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}`) : Promise.resolve(null),
       can("teams.view") ? api<Team[]>("/teams") : Promise.resolve([]),
       can("leave_types.view") ? api<Leave[]>("/leave-types") : Promise.resolve([]),
       can("calendar.view") ? api<Day[]>("/calendar") : Promise.resolve([]),
       api<{ user: User; face_enrolled: boolean }>("/me"),
     ])
-      .then(([d, r, a, t, l, h, m]) => {
+      .then(([d, r, t, l, h, m]) => {
         if (alive) {
           setDash(d);
           setRequests(r);
-          setAtt(a);
           setTeams(t);
           setLeaves(l);
           setDays(h);
@@ -287,29 +293,32 @@ function App() {
       .catch((e) => alive && setError(e.message));
     Promise.all([
         can("users.view") ? api<User[]>("/users") : Promise.resolve([]),
-        can("audit.view") ? api<
-          Page<{
-            id: number;
-            name: string;
-            action: string;
-            subject: string;
-            created_at: string;
-          }>
-        >("/audit") : Promise.resolve({data:[]}),
         (user.role === "owner" || can("teams.manage") || can("users.manage")) ? api<AccessRole[]>("/roles") : Promise.resolve([]),
         user.role === "owner" ? api<Permission[]>("/permissions") : Promise.resolve([]),
+        can("home_office.manage") ? api<{data:TeamHome[];teams:{id:number;name:string}[]}>("/team-home-office") : Promise.resolve({data:[],teams:[]}),
       ])
-        .then(([p, a, r, permissions]) => {
+        .then(([p, r, permissions, home]) => {
           if (alive) {
             setPeople(p); setAccessRoles(r); setPermissions(permissions);
-            setAudit(a.data);
+            setTeamHome(home);
           }
         })
         .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [user, faceEnrolled, revision, reqPage, attPage, reportStart, reportEnd, reportUser]);
+  }, [user, faceEnrolled, revision, reqPage]);
+  useEffect(()=>{
+    if(!user||!faceEnrolled)return;let alive=true;
+    const load=can("attendance.view") ? api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}&filters=${encodeURIComponent(JSON.stringify(attendanceTable.filters))}&sort=${attendanceTable.sort||""}&direction=${attendanceTable.direction||"asc"}`) : Promise.resolve(null);
+    load.then(result=>{if(alive)setAtt(result);}).catch(e=>{if(alive)setError(e.message);});
+    return()=>{alive=false;};
+  },[user,faceEnrolled,revision,attPage,reportStart,reportEnd,reportUser,attendanceTable]);
+  useEffect(()=>{
+    if(!user||!faceEnrolled)return;let alive=true;
+    if(can("audit.view"))api<Page<Audit>&{facets?:Record<string,string[]>;total?:number}>(`/audit?page=${auditPage}&filters=${encodeURIComponent(JSON.stringify(auditTable.filters))}&sort=${auditTable.sort||""}&direction=${auditTable.direction||"asc"}`).then(result=>{if(alive){setAudit(result.data);setAuditMeta(result);}}).catch(e=>{if(alive)setError(e.message);});
+    else{setAudit([]);setAuditMeta(null);}return()=>{alive=false;};
+  },[user,faceEnrolled,revision,auditPage,auditTable]);
   useEffect(() => {
     if (!notice) return;
     const id = setTimeout(() => setNotice(""), 5000);
@@ -433,6 +442,7 @@ function App() {
     ...(can("teams.view") ? [["teams","My teams",Users] as [string,string,typeof Home]] : []),
     ...(can("users.view") ? [["people","People",Users] as [string,string,typeof Home]] : []),
     ...(can("leave_types.manage") || can("calendar.manage") || can("audit.view") ? [["settings","Workspace",Settings] as [string,string,typeof Home]] : []),
+    ...(can("home_office.manage") ? [["team-home","Team home office",Home] as [string,string,typeof Home]] : []),
     ...(user.role === "owner" ? [["roles","Roles",Users] as [string,string,typeof Home], ["permissions","Permissions",ShieldCheck] as [string,string,typeof Home]] : []),
   ];
   const requestCards = (items: Application[]) =>
@@ -650,6 +660,7 @@ function App() {
                       teams: "Better, together.",
                       people: "Meet your people.",
                       settings: "Your workspace, your way.",
+                      roles:"Roles",permissions:"Permissions", "team-home":"Team home office",
                     }[page]}
               </h1>
               <p>
@@ -658,9 +669,9 @@ function App() {
                   : "Stay connected to the details that matter."}
               </p>
             </div>
-            <button className="primary" onClick={() => setModal("leave")}>
+            {["overview","requests"].includes(page) && can("applications.create") && <button className="primary" onClick={() => setModal("leave")}>
               <Plus size={17} /> New request
-            </button>
+            </button>}
           </div>
           {page === "overview" && (
             <>
@@ -932,38 +943,19 @@ function App() {
                 ["Late departure avg",minutesLabel(att.summary.late_departure_avg_minutes),`${att.summary.late_departure_days} late departures · completed days average`],
                 ["Missing exit",String(att.summary.missing_exits),"No checkout by local midnight"],
               ].map(([title,value,hint])=><div className="card attendance-stat" key={title}><h3>{title}</h3><strong>{value}</strong><p>{hint}</p></div>)}</div>}
-              <p className="muted">Slots default to 09:00–18:00. Missing exits and current open shifts are excluded from hour averages. Rates use working days through today; owner totals count employee-days.</p>
-              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Employee</th>
-                      <th>Date</th>
-                      <th>Check in</th>
-                      <th>Check out</th>
-                      <th>Workplace / leave</th><th>Status</th><th>Work slot</th><th>Hours / inside slot</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {att?.data.map((a) => (
-                      <tr key={a.id}>
-                        <td>
-                          <strong>{a.name}</strong>
-                        </td>
-                        <td>{date(a.work_date)}</td>
-                        <td>{time(a.check_in)}</td>
-                        <td>{a.status==="missing_exit" ? "Missing exit" : time(a.check_out)}</td>
-                        <td>
-                          <Badge value={a.mode} />{a.leave_name && <small>{a.leave_name}</small>}
-                        </td><td>{label(a.status || "")}</td><td>{a.slot_start}–{a.slot_end}</td><td>{a.working_minutes==null?"—":minutesLabel(a.working_minutes)} / {a.actual_minutes==null?"—":minutesLabel(a.actual_minutes)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {!att?.data.length && (
-                  <Empty>No attendance recorded yet.</Empty>
-                )}
-              </div>
+              <p className="muted">Slots default to 09:00–18:00. Missing exits and current open shifts are excluded from hour averages. Rates use working days through today; owner totals count employee-days. Summary cards follow date/employee filters; column filters affect table rows.</p>
+              <DataTable rows={att?.data||[]} rowKey={a=>a.id} label="Attendance" remote state={attendanceTable} onChange={v=>{setAttendanceTable(v);setAttPage(1);}} facets={att?.facets} total={att?.total} columns={[
+                {key:"name",title:"Employee",value:a=>a.name},
+                {key:"work_date",title:"Date",value:a=>a.work_date,render:a=>date(a.work_date),formatValue:date},
+                {key:"check_in",title:"Check in",value:a=>a.check_in,render:a=>time(a.check_in),formatValue:time},
+                {key:"check_out",title:"Check out",value:a=>a.check_out,render:a=>a.status==="missing_exit"?"Missing exit":time(a.check_out),formatValue:time},
+                {key:"mode",title:"Workplace",value:a=>a.mode,render:a=><Badge value={a.mode}/>,formatValue:label},
+                {key:"leave_name",title:"Leave type",value:a=>a.leave_name},
+                {key:"status",title:"Status",value:a=>a.status,render:a=>label(a.status||""),formatValue:label},
+                {key:"slot_start",title:"Slot start",value:a=>a.slot_start},{key:"slot_end",title:"Slot end",value:a=>a.slot_end},
+                {key:"working_minutes",title:"Working hours",value:a=>a.working_minutes,render:a=>a.working_minutes==null?"—":minutesLabel(a.working_minutes),formatValue:v=>minutesLabel(Number(v))},
+                {key:"actual_minutes",title:"Inside slot",value:a=>a.actual_minutes,render:a=>a.actual_minutes==null?"—":minutesLabel(a.actual_minutes),formatValue:v=>minutesLabel(Number(v))},
+              ]}/>
               <Pager value={att} onChange={setAttPage} />
             </>
           )}
@@ -1030,30 +1022,13 @@ function App() {
                   <Plus size={16} /> Add person
                 </button>
               </div>
-              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Person</th>
-                      <th>Role</th>
-                      <th>Face profile</th>
-                      <th>Account</th>
-                      <th>Manage</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {people.map((p) => (
-                      <tr key={p.id}>
-                        <td>
-                          <strong>{p.name}</strong>
-                          <small>{p.email}</small>
-                        </td>
-                        <td>{p.role_name || label(p.role)}</td>
-                        <td>{p.face_enrolled ? "Enrolled" : "Not enrolled"}</td>
-                        <td>
-                          <Badge value={p.active ? "active" : "inactive"} />
-                        </td>
-                        <td>
+              <DataTable rows={people} rowKey={p=>p.id} label="People" columns={[
+                {key:"name",title:"Person",value:p=>p.name,render:p=><strong>{p.name}</strong>},
+                {key:"email",title:"Email",value:p=>p.email},
+                {key:"role",title:"Role",value:p=>p.role_name||label(p.role)},
+                {key:"face",title:"Face profile",value:p=>p.face_enrolled?"Enrolled":"Not enrolled"},
+                {key:"active",title:"Account",value:p=>p.active?"Active":"Inactive",render:p=><Badge value={p.active?"active":"inactive"}/>},
+                {key:"manage",title:"Manage",actions:true,value:()=>"",render:p=>(
                           <div className="table-actions">
                             <button
                               disabled={!can("users.manage")}
@@ -1086,12 +1061,8 @@ function App() {
                               </button>
                             )}
                           </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                )},
+              ]}/>
             </>
           )}
           {page === "settings" && (can("leave_types.manage") || can("calendar.manage") || can("audit.view")) && (
@@ -1147,28 +1118,9 @@ function App() {
                 </div>
               </div>
               <h2 className="section-title">Audit trail</h2>
-              <div className="card table-wrap" role="region" aria-label="Scrollable records table" tabIndex={0}>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Actor</th>
-                      <th>Action</th>
-                      <th>Subject</th>
-                      <th>Time (UTC)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {audit.map((a) => (
-                      <tr key={a.id}>
-                        <td>{a.name}</td>
-                        <td>{a.action}</td>
-                        <td>#{a.subject}</td>
-                        <td>{a.created_at}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable rows={audit} rowKey={a=>a.id} label="Audit" remote state={auditTable} onChange={v=>{setAuditTable(v);setAuditPage(1);}} facets={auditMeta?.facets} total={auditMeta?.total} columns={[
+                {key:"name",title:"Actor",value:a=>a.name},{key:"action",title:"Action",value:a=>a.action},{key:"subject",title:"Subject",value:a=>a.subject},{key:"created_at",title:"Time (UTC)",value:a=>a.created_at},
+              ]}/><Pager value={auditMeta} onChange={setAuditPage}/>
             </>
           )}
           {page==="roles" && user.role==="owner" && <>
@@ -1179,7 +1131,22 @@ function App() {
           {page==="permissions" && user.role==="owner" && <>
             <div className="section-heading"><h2>Permissions</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-permission");}}>Create permission</button></div>
             <p>Built-in keys protect existing features. Custom keys can be attached to new features through the backend permission middleware.</p>
-            <div className="card">{permissions.map(p=><div className="policy-row" key={p.id}><span><strong>{p.display_name || p.name}</strong><small>{p.slug}</small></span><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system && <button onClick={()=>{if(confirm(`Delete ${p.display_name || p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>)}</div>
+            <DataTable rows={permissions} rowKey={p=>p.id} label="Permissions" columns={[
+              {key:"name",title:"Permission",value:p=>p.display_name||p.name,render:p=><strong>{p.display_name||p.name}</strong>},
+              {key:"slug",title:"Key",value:p=>p.slug,render:p=><code className="permission-key">{p.slug}</code>},
+              {key:"scope",title:"Type",value:p=>p.system?"Built-in":"Custom",render:p=><Badge value={p.system?"built_in":"custom"}/>},
+              {key:"actions",title:"Actions",actions:true,value:()=>"",render:p=><div className="table-actions"><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system&&<button onClick={()=>{if(confirm(`Delete ${p.display_name||p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>},
+            ]}/>
+
+          </>}
+          {page==="team-home" && can("home_office.manage") && <>
+            <div className="section-heading"><h2>Team home-office assignments</h2><button className="primary" onClick={()=>setModal("team-home")}>Assign home office</button></div>
+            <p>Assign one team or all teams for an inclusive date range. Members still capture their face for check-in and checkout. Overlapping assignments are allowed; any active assignment applies.</p>
+            <DataTable rows={teamHome.data} rowKey={r=>r.id} label="Team home office" columns={[
+              {key:"team",title:"Team",value:r=>r.team_name||"All teams"},{key:"start",title:"First day",value:r=>r.start_date,render:r=>date(r.start_date)},{key:"end",title:"Last day",value:r=>r.end_date,render:r=>date(r.end_date)},
+              {key:"creator",title:"Assigned by",value:r=>r.creator},{key:"status",title:"Status",value:r=>r.cancelled_at?"Cancelled":r.end_date<dhakaToday()?"Expired":r.start_date>dhakaToday()?"Scheduled":"Active"},{key:"reason",title:"Reason",value:r=>r.reason},
+              {key:"actions",title:"Actions",actions:true,value:()=>"",render:r=>!r.cancelled_at&&<button onClick={()=>{if(confirm("Cancel this assignment? Recorded attendance remains unchanged."))run(()=>submit(`/team-home-office/${r.id}`,undefined,"DELETE"));}}>Cancel assignment</button>},
+            ]}/>
           </>}
           <footer className="page-footer">
             attendance<span>Built around your working day.</span>
@@ -1250,6 +1217,14 @@ function App() {
                 busy={busy}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "team-home" ? (
+              <form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(()=>submit("/team-home-office",{...f,team_id:f.team_id?Number(f.team_id):null}));}}>
+                <Field title="Team"><select name="team_id" aria-label="Team"><option value="">All teams</option>{teamHome.teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
+                <div className="two"><Field title="First day"><input type="date" name="start_date" defaultValue={dhakaToday()} required/></Field><Field title="Last day"><input type="date" name="end_date" defaultValue={dhakaToday()} required/></Field></div>
+                <Field title="Reason"><textarea name="reason" required minLength={5} maxLength={2000}/></Field>
+                <p>No employee approval request is required for an authorized team assignment. Unassigned users are excluded from All teams.</p>
+                <button className="primary wide" disabled={busy}>Save home-office assignment</button>
+              </form>
             ) : modal === "user-access" && editing ? (
               <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(()=>submit(`/users/${editing.id}/access`,{role_id:Number(f.get("role_id")),permission_ids:f.getAll("permission_ids").map(Number)},"PUT"));}}>
                 <h3>{editing.name}</h3><Field title="Assigned role"><select name="role_id" aria-label="Assigned role" defaultValue={editing.role_id} required>{accessRoles.map(r=><option key={r.id} value={r.id}>{r.display_name || r.name}</option>)}</select></Field>
