@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 type Challenge = { id: string; step: number; total: number; pose: string | null; nonce: string; complete: boolean; expires_at: string };
 type Props = {
+  allowed?: boolean;
   purpose: "enroll" | "in" | "out";
   target?: { id: number; name: string };
   request: <T>(path: string, method?: string, body?: unknown) => Promise<T>;
@@ -17,7 +18,7 @@ const prompts: Record<string, string> = {
 };
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-export function CameraChallenge({ purpose, target, request, onVerified }: Props) {
+export function CameraChallenge({allowed=true, purpose, target, request, onVerified }: Props) {
   const video = useRef<HTMLVideoElement>(null);
   const instructions = useRef<HTMLDivElement>(null);
   const stream = useRef<MediaStream | null>(null);
@@ -165,9 +166,10 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
       <p>{status || (purpose !== "enroll" ? "Look straight at the camera, keep your face visible, and capture your image." : challenge?.pose === "blink" ? "Press Start eye check. Keep eyes open first. When CLOSE appears, close both eyes for one second, then reopen them." : challenge?.pose === "left" || challenge?.pose === "right" ? "Turn a little, about 20°. Keep your whole face in view and hold still. Then press I’m ready — capture." : "Keep your face inside the oval with your eyes open. Press I’m ready — capture and hold still.")}</p>
     </div>
     {error && <div className="alert error" role="alert">{error}</div>}
+    {!allowed && <p role="alert">You do not have permission for this action. Ask the Owner to update your access.</p>}
     <label className="consent"><input type="checkbox" checked={consent} disabled={busy} onChange={(e) => setConsent(e.target.checked)} />{purpose === "enroll" ? target ? "I have confirmed this user’s identity and obtained their consent for face enrollment." : "I consent to processing my camera images and storing my face template for attendance verification." : "I consent to matching this camera image with my enrolled face and storing it with my attendance record."}</label>
-    <button className="primary wide" disabled={busy || !consent} onClick={ready && challenge ? verify : start}>{busy ? "Verifying…" : !ready ? "Start camera" : challenge?.complete ? "Save verified result" : purpose !== "enroll" ? (purpose === "in" ? "Capture & check in" : "Capture & check out") : challenge?.pose === "blink" ? "Start eye check" : "I’m ready — capture"}</button>
-    {ready && <button className="wide camera-restart" disabled={busy} onClick={start}>Restart camera checks</button>}
+    <button className="primary wide" disabled={!allowed || busy || !consent} onClick={ready && challenge ? verify : start}>{busy ? "Verifying…" : !ready ? "Start camera" : challenge?.complete ? "Save verified result" : purpose !== "enroll" ? (purpose === "in" ? "Capture & check in" : "Capture & check out") : challenge?.pose === "blink" ? "Start eye check" : "I’m ready — capture"}</button>
+    {ready && <button className="wide camera-restart" disabled={!allowed || busy} onClick={start}>Restart camera checks</button>}
     <small className="muted">Use your live face. Attendance uses face matching only. A printed or displayed photo may also match; no liveness or anti-spoof check is performed.</small>
   </div>;
 }

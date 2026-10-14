@@ -9,7 +9,7 @@ async function workspace(page: Page, owner = false) {
   let attendance: null | Record<string, unknown> = null;
   let purpose = "enroll", step = 0, session = 0;
   let retryOnce = true;
-  const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true, effective_permissions: ["dashboard.view","attendance.view","attendance.record","applications.view","applications.create","teams.view","leave_types.view","calendar.view"] };
+  const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true, effective_permissions: ["dashboard.view","attendance.view","attendance.check_in","attendance.check_out","applications.view","applications.create_leave","applications.create_home_office","applications.create_overtime","teams.view","leave_types.view","calendar.view","face.enroll_self","profile.view_self","profile.change_password"] };
   const challenges: string[] = [];
   const steps = () => purpose === "enroll" ? ["front", "left", "right"] : ["capture"];
   const challenge = () => ({ id: `session-${session}`, step, total: steps().length, pose: steps()[step] || null, nonce: `nonce-${step}`, complete: step === steps().length, expires_at: new Date(Date.now() + 600000).toISOString() });
@@ -52,6 +52,7 @@ async function workspace(page: Page, owner = false) {
       attendance = { id: 1, user_id: 1, name: user.name, work_date: "2026-10-13", check_in: "2026-10-13T03:15:30.000000Z", check_out: action === "out" ? "2026-10-13T12:45:40.000000Z" : null, mode: "office" };
       value = { message: action === "in" ? "Checked in successfully" : "Checked out successfully", attendance };
     } else if (["/api/applications", "/api/attendance"].includes(path)) value = { data: attendance && path === "/api/attendance" ? [attendance] : [], current_page: 1, last_page: 1 };
+    else if(path === "/api/attendance/people") value=[{id:1,name:"Test Employee"},{id:2,name:"New Employee"}];
     else if (path === "/api/users") value = [{ id: 2, name: "New Employee", email: "new@example.com", role: "employee", active: true, face_enrolled: targetEnrolled }];
     else if (path === "/api/team-home-office") value = {data:[],teams:[]};
     else if (path === "/api/audit") value = { data: [], current_page: 1, last_page: 1 };

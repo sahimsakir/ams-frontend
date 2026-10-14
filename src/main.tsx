@@ -28,6 +28,7 @@ import {
 import "./style.css";
 import { CameraChallenge } from "./CameraChallenge";
 type User = {
+  can_view_profile?: boolean;
   role_id?: number; role_name?: string; effective_permissions?: string[]; direct_permission_ids?: number[];
   slot_start?: string | null; slot_end?: string | null; slot_team_id?: number | null;
   id: number;
@@ -56,6 +57,7 @@ type Approval = {
   comment?: string;
 };
 type Application = {
+  can_cancel?: boolean;
   has_document?: boolean;
   document_name?: string;
   id: number;
@@ -95,7 +97,7 @@ type Dashboard = {
   teams: { name: string; team_role: string }[];
 };
 type Page<T> = { data: T[]; current_page: number; last_page: number };
-type Permission = {id:number;name:string;display_name?:string;slug:string;system:boolean};
+type Permission = {id:number;name:string;display_name?:string;slug:string;system:boolean;deprecated?:boolean};
 type AccessRole = {id:number;name:string;display_name?:string;slug:string;system:boolean;permissions:Permission[]};
 type Audit={id:number;name:string;action:string;subject:string;created_at:string};
 type TeamHome={id:number;team_id:number|null;team_name:string|null;start_date:string;end_date:string;reason:string;creator:string;cancelled_at:string|null};
@@ -203,6 +205,8 @@ function App() {
     [accessRoles,setAccessRoles] = useState<AccessRole[]>([]),
     [permissions,setPermissions] = useState<Permission[]>([]),
     [accessEdit,setAccessEdit] = useState<AccessRole|Permission|null>(null),
+    [attendancePeople,setAttendancePeople] = useState<{id:number;name:string}[]>([]),
+    [profileData,setProfileData] = useState<User|null>(null),
     [attendanceTable,setAttendanceTable] = useState<TableState>({filters:{}}),
     [auditTable,setAuditTable] = useState<TableState>({filters:{}}),
     [auditPage,setAuditPage] = useState(1),
@@ -230,6 +234,9 @@ function App() {
     >([]),
     [faceEnrolled, setFaceEnrolled] = useState(false);
   const can = (permission: string) => !!user && (user.role === "owner" || !!user.effective_permissions?.includes(permission));
+  const canAny=(...keys:string[])=>keys.some(can);
+  const createKind=()=>['leave','home_office','overtime'].find(k=>can('applications.create_'+k))||'leave';
+  const viewProfile=(id?:number)=>run(async()=>{const result=await api<{user:User}>(id?`/users/${id}/profile`:'/profile');setProfileData(result.user);setModal('profile');});
   async function run(fn: () => Promise<void>) {
     setBusy(true);
     setError("");
@@ -273,7 +280,7 @@ function App() {
     let alive = true;
     Promise.all([
       can("dashboard.view") ? api<Dashboard>("/dashboard") : Promise.resolve(null),
-      can("applications.view") ? api<Page<Application>>(`/applications?page=${reqPage}`) : Promise.resolve(null),
+      canAny("applications.view","applications.view_team","applications.view_all") ? api<Page<Application>>(`/applications?page=${reqPage}`) : Promise.resolve(null),
       can("teams.view") ? api<Team[]>("/teams") : Promise.resolve([]),
       can("leave_types.view") ? api<Leave[]>("/leave-types") : Promise.resolve([]),
       can("calendar.view") ? api<Day[]>("/calendar") : Promise.resolve([]),
@@ -293,9 +300,9 @@ function App() {
       .catch((e) => alive && setError(e.message));
     Promise.all([
         can("users.view") ? api<User[]>("/users") : Promise.resolve([]),
-        (user.role === "owner" || can("teams.manage") || can("users.manage")) ? api<AccessRole[]>("/roles") : Promise.resolve([]),
-        user.role === "owner" ? api<Permission[]>("/permissions") : Promise.resolve([]),
-        can("home_office.manage") ? api<{data:TeamHome[];teams:{id:number;name:string}[]}>("/team-home-office") : Promise.resolve({data:[],teams:[]}),
+        canAny("roles.view","roles.create","roles.update","teams.members_update","users.create","users.update","users.assign_access") ? api<AccessRole[]>("/roles") : Promise.resolve([]),
+        canAny("permissions.view","roles.create","roles.update","users.assign_access") ? api<Permission[]>("/permissions") : Promise.resolve([]),
+        can("home_office.view") ? api<{data:TeamHome[];teams:{id:number;name:string}[]}>("/team-home-office") : Promise.resolve({data:[],teams:[]}),
       ])
         .then(([p, r, permissions, home]) => {
           if (alive) {
@@ -310,7 +317,8 @@ function App() {
   }, [user, faceEnrolled, revision, reqPage]);
   useEffect(()=>{
     if(!user||!faceEnrolled)return;let alive=true;
-    const load=can("attendance.view") ? api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${user.role === "owner" && reportUser ? `&user_id=${reportUser}` : ""}&filters=${encodeURIComponent(JSON.stringify(attendanceTable.filters))}&sort=${attendanceTable.sort||""}&direction=${attendanceTable.direction||"asc"}`) : Promise.resolve(null);
+    const load=canAny("attendance.view","attendance.view_team","attendance.view_all") ? api<AttendancePage>(`/attendance?page=${attPage}&start_date=${reportStart}&end_date=${reportEnd}${canAny("attendance.view_team","attendance.view_all") && reportUser ? `&user_id=${reportUser}` : ""}&filters=${encodeURIComponent(JSON.stringify(attendanceTable.filters))}&sort=${attendanceTable.sort||""}&direction=${attendanceTable.direction||"asc"}`) : Promise.resolve(null);
+    if(canAny("attendance.view","attendance.view_team","attendance.view_all"))api<{id:number;name:string}[]>("/attendance/people").then(rows=>{if(alive)setAttendancePeople(rows);}).catch(e=>{if(alive)setError(e.message);});
     load.then(result=>{if(alive)setAtt(result);}).catch(e=>{if(alive)setError(e.message);});
     return()=>{alive=false;};
   },[user,faceEnrolled,revision,attPage,reportStart,reportEnd,reportUser,attendanceTable]);
@@ -417,7 +425,7 @@ function App() {
         <span className="eyebrow">WELCOME, {user.name}</span>
         <h2 id="enrollment-required-title">Enroll your face to continue</h2>
         <p>Complete these 3 quick camera checks to unlock your workspace. You only need to enroll once.</p>
-        <CameraChallenge purpose="enroll" request={api} onVerified={async (challenge_id) => {
+        <CameraChallenge allowed={can("face.enroll_self")} purpose="enroll" request={api} onVerified={async (challenge_id) => {
           const result = await api<{ message: string }>("/face/enroll", "POST", { challenge_id });
           setFaceEnrolled(true); setNotice(result.message); refresh((n) => n + 1);
         }} />
@@ -437,13 +445,15 @@ function App() {
     ) || [];
   const navigation: [string,string,typeof Home][] = [
     ["overview","Overview",LayoutDashboard],
-    ...(can("attendance.view") ? [["attendance","Attendance",Clock3] as [string,string,typeof Home]] : []),
-    ...(can("applications.view") ? [["requests","Requests",CalendarDays] as [string,string,typeof Home]] : []),
+    ...(canAny("attendance.view","attendance.view_team","attendance.view_all") ? [["attendance","Attendance",Clock3] as [string,string,typeof Home]] : []),
+    ...(canAny("applications.view","applications.view_team","applications.view_all") ? [["requests","Requests",CalendarDays] as [string,string,typeof Home]] : []),
     ...(can("teams.view") ? [["teams","My teams",Users] as [string,string,typeof Home]] : []),
     ...(can("users.view") ? [["people","People",Users] as [string,string,typeof Home]] : []),
-    ...(can("leave_types.manage") || can("calendar.manage") || can("audit.view") ? [["settings","Workspace",Settings] as [string,string,typeof Home]] : []),
-    ...(can("home_office.manage") ? [["team-home","Team home office",Home] as [string,string,typeof Home]] : []),
-    ...(user.role === "owner" ? [["roles","Roles",Users] as [string,string,typeof Home], ["permissions","Permissions",ShieldCheck] as [string,string,typeof Home]] : []),
+    ...(canAny("leave_types.create","leave_types.update","leave_types.delete") || canAny("calendar.create","calendar.update","calendar.delete") || can("audit.view") ? [["settings","Workspace",Settings] as [string,string,typeof Home]] : []),
+    ...(can("home_office.view") ? [["team-home","Team home office",Home] as [string,string,typeof Home]] : []),
+    ...(can("roles.view") ? [["roles","Roles",Users] as [string,string,typeof Home]] : []),
+    ...(can("permissions.view") ? [["permissions","Permissions",ShieldCheck] as [string,string,typeof Home]] : []),
+    ...(can("profile.view_self") ? [["profile","My profile",Users] as [string,string,typeof Home]] : []),
   ];
   const requestCards = (items: Application[]) =>
     items.length ? (
@@ -477,7 +487,7 @@ function App() {
           </h4>
           <p>{a.reason}</p>
           {a.minutes && <p>{a.minutes} overtime minutes</p>}
-          {a.has_document && <button onClick={() => run(() => downloadDocument(a.id,a.document_name || "document"))}>Download supporting document</button>}
+          {a.has_document && can("applications.document_view") && <button onClick={() => run(() => downloadDocument(a.id,a.document_name || "document"))}>Download supporting document</button>}
           <div className="reviewers">
             {a.approvals.map((x) => (
               <span key={x.id} title={x.comment || ""}>
@@ -494,15 +504,14 @@ function App() {
             ))}
           </div>
           <div className="card-actions">
-            {a.status === "pending" && can("applications.review") &&
+            {a.status === "pending" && canAny("applications.approve","applications.reject") &&
               a.approvals.some(
                 (x) => x.reviewer_id === user.id && x.status === "pending",
               ) && (
                 <>
                   <button
-                    disabled={busy}
-                    className="primary small"
-                    onClick={() =>
+                    disabled={busy || !can("applications.approve")}
+                    className="primary small" onClick={() =>
                       run(() =>
                         submit(`/applications/${a.id}/decision`, {
                           decision: "approved",
@@ -513,7 +522,7 @@ function App() {
                     Approve
                   </button>
                   <button
-                    disabled={busy}
+                    disabled={busy || !can("applications.reject")}
                     className="danger small"
                     onClick={() => {
                       const comment = prompt("Reason for rejection");
@@ -530,7 +539,7 @@ function App() {
                   </button>
                 </>
               )}
-            {(a.user_id === user.id || can("applications.manage")) &&
+            {(a.can_cancel ?? (a.user_id === user.id && can("applications.cancel_self"))) &&
               (a.status === "pending" ||
                 (a.kind === "home_office" && a.status === "approved")) && (
                 <button
@@ -585,7 +594,7 @@ function App() {
           <strong>A clearer working day</strong>
           <p>Your attendance and requests, together in one place.</p>
         </div>
-        <button className="account" onClick={() => setModal("password")}>
+        <button className="account" disabled={!can("profile.view_self")} onClick={()=>viewProfile()}>
           <div className="avatar">
             {user.name
               .split(" ")
@@ -669,7 +678,7 @@ function App() {
                   : "Stay connected to the details that matter."}
               </p>
             </div>
-            {["overview","requests"].includes(page) && can("applications.create") && <button className="primary" onClick={() => setModal("leave")}>
+            {["overview","requests"].includes(page) && canAny("applications.create_leave","applications.create_home_office","applications.create_overtime") && <button className="primary" onClick={() => setModal(createKind())}>
               <Plus size={17} /> New request
             </button>}
           </div>
@@ -718,7 +727,7 @@ function App() {
                     </div>
                   </div>
                   <button
-                    disabled={!can("attendance.record") || (faceEnrolled && !!dash?.today?.check_out)}
+                    disabled={!(dash?.today?can("attendance.check_out"):can("attendance.check_in")) || (faceEnrolled && !!dash?.today?.check_out)}
                     onClick={() => setModal(!faceEnrolled ? "enroll" : dash?.today ? "out" : "in")}
                   >
                     <Camera size={18} />
@@ -762,7 +771,7 @@ function App() {
                     return (
                       <button
                         key={id as string}
-                        disabled={!can("applications.create")} onClick={() => setModal(id as string)}
+                        disabled={!can("applications.create_"+id)} onClick={() => setModal(id as string)}
                       >
                         <span className="icon-box">
                           <I size={20} />
@@ -885,7 +894,7 @@ function App() {
               </section>
             </>
           )}
-          {page === "requests" && can("applications.view") && (
+          {page === "requests" && canAny("applications.view","applications.view_team","applications.view_all") && (
             <>
               <div className="info-banner">
                 <ShieldCheck size={20} />
@@ -907,7 +916,7 @@ function App() {
               <Pager value={requests} onChange={setReqPage} />
             </>
           )}
-          {page === "attendance" && can("attendance.view") && (
+          {page === "attendance" && canAny("attendance.view","attendance.view_team","attendance.view_all") && (
             <>
               <div className="toolbar">
                 <p>Live-camera verified records · all times Asia/Dhaka</p>
@@ -915,13 +924,13 @@ function App() {
                   {!faceEnrolled && <button className="primary" onClick={() => setModal("enroll")}>Enroll my face</button>}
                   <button
                     onClick={() => setModal("in")}
-                    disabled={!can("attendance.record") || !faceEnrolled || !!dash?.today}
+                    disabled={!can("attendance.check_in") || !faceEnrolled || !!dash?.today}
                   >
                     Check in
                   </button>
                   <button
                     onClick={() => setModal("out")}
-                    disabled={!can("attendance.record") || !faceEnrolled || !dash?.today || !!dash?.today.check_out}
+                    disabled={!can("attendance.check_out") || !faceEnrolled || !dash?.today || !!dash?.today.check_out}
                   >
                     Check out
                   </button>
@@ -930,7 +939,7 @@ function App() {
               <div className="report-filters card">
                 <Field title="Start date"><input type="date" value={reportStart} max={reportEnd} onChange={e=>{if(e.target.value){setReportStart(e.target.value);setAttPage(1);}}} /></Field>
                 <Field title="End date"><input type="date" value={reportEnd} min={reportStart} onChange={e=>{if(e.target.value){setReportEnd(e.target.value);setAttPage(1);}}} /></Field>
-                {user.role==="owner" && <Field title="Employee"><select aria-label="Employee" value={reportUser} onChange={e=>{setReportUser(e.target.value);setAttPage(1);}}><option value="">Everyone</option>{people.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>}
+                {canAny("attendance.view_team","attendance.view_all") && <Field title="Employee"><select aria-label="Employee" value={reportUser} onChange={e=>{setReportUser(e.target.value);setAttPage(1);}}><option value="">All visible members</option>{attendancePeople.map(p=><option value={p.id} key={p.id}>{p.name}</option>)}</select></Field>}
                 <button onClick={()=>{setReportStart(dhakaToday().slice(0,7)+"-01");setReportEnd(dhakaToday());setAttPage(1);}}>Current month</button>
               </div>
               {att?.summary && <div className="attendance-stats">{[
@@ -963,7 +972,7 @@ function App() {
             <>
               <div className="section-heading">
                 <h2>{teams.length} team connections</h2>
-                {can("teams.manage") && (
+                {can("teams.create") && (
                   <button onClick={() => setModal("team")}>
                     <Plus size={16} /> Create team
                   </button>
@@ -977,16 +986,16 @@ function App() {
                     </span>
                     <h2>{t.name}</h2>
 <p>Work slot: {t.slot_start?.slice(0,5)||"09:00"}–{t.slot_end?.slice(0,5)||"18:00"}</p>
-                    {can("work_slots.manage") && <button onClick={()=>{setSlotTarget({kind:"teams",...t});setModal("slot");}}>Edit work slot</button>}
+                    {can("work_slots.update_team") && <button onClick={()=>{setSlotTarget({kind:"teams",...t});setModal("slot");}}>Edit work slot</button>}
                     <p>{t.members.length} people · connected across roles</p>
                     {t.members.map((m) => (
                       <div className="member" key={m.id}>
                         <div className="avatar">{m.name[0]}</div>
-                        <strong>{m.name}</strong>
+                        <strong>{m.name}</strong>{canAny("profile.view_team","profile.view_all") && <button onClick={()=>viewProfile(m.id)}>View profile</button>}
                         <small>{label(m.team_role)}</small>
                       </div>
                     ))}
-                    {can("teams.manage") && (
+                    {can("teams.members_update") && (
                       <button
                         className="wide"
                         onClick={() => {
@@ -1012,9 +1021,9 @@ function App() {
                 <button disabled={!can("users.import")} onClick={() => setModal("import")}>Import CSV</button>
                 <button
                   className="primary"
-                  disabled={!can("users.manage")}
+                  disabled={!can("users.create")}
                   onClick={() => {
-                    if(!can("users.manage"))return;
+                    if(!can("users.create"))return;
                     setEditing(null);
                     setModal("person");
                   }}
@@ -1031,20 +1040,21 @@ function App() {
                 {key:"manage",title:"Manage",actions:true,value:()=>"",render:p=>(
                           <div className="table-actions">
                             <button
-                              disabled={!can("users.manage")}
+                              disabled={!can("users.update")}
                               onClick={() => {
-                                if(!can("users.manage"))return;
+                                if(!can("users.update"))return;
                                 setEditing(p);
                                 setModal("person");
                               }}
                             >
                               Edit
                             </button>
-{can("work_slots.manage") && <button onClick={()=>{setSlotTarget({kind:"users",...p});setModal("slot");}}>Work slot</button>}
-                            {user.role === "owner" && <button onClick={()=>{setEditing(p);setModal("user-access");}}>Role & permissions</button>}
-                            {can("users.manage") && p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
-                            {can("face.manage") && !p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
-                            {can("face.manage") && p.face_reset_available && (
+{p.can_view_profile && <button onClick={()=>viewProfile(p.id)}>View profile</button>}
+{can("work_slots.update_user") && <button onClick={()=>{setSlotTarget({kind:"users",...p});setModal("slot");}}>Work slot</button>}
+                            {can("users.assign_access") && <button onClick={()=>{setEditing(p);setModal("user-access");}}>Role & permissions</button>}
+                            {can("users.delete") && p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
+                            {can("face.enroll_others") && !p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
+                            {can("face.reset") && p.face_reset_available && (
                               <button
                                 onClick={() => {
                                   if (confirm("Reset this face profile? The user or an owner must enroll it again."))
@@ -1065,7 +1075,7 @@ function App() {
               ]}/>
             </>
           )}
-          {page === "settings" && (can("leave_types.manage") || can("calendar.manage") || can("audit.view")) && (
+          {page === "settings" && (canAny("leave_types.create","leave_types.update","leave_types.delete") || canAny("calendar.create","calendar.update","calendar.delete") || can("audit.view")) && (
             <>
               <div className="request-grid">
                 <div className="card setting">
@@ -1078,11 +1088,11 @@ function App() {
                     <div className="policy-row" key={l.id}>
                       <strong>{l.name}</strong>
                       <span>{l.annual_limit} days / year</span>
-                      <button disabled={!can("leave_types.manage")} onClick={() => { setEditingLeave(l); setModal("policy"); }}>Edit</button>
-                      <button disabled={!can("leave_types.manage")} onClick={() => { if(confirm(`Delete ${l.name}? Past requests will remain.`)) run(() => submit(`/leave-types/${l.id}`,undefined,"DELETE")); }}>Delete</button>
+                      <button disabled={!can("leave_types.update")} onClick={() => { setEditingLeave(l); setModal("policy"); }}>Edit</button>
+                      <button disabled={!can("leave_types.delete")} onClick={() => { if(confirm(`Delete ${l.name}? Past requests will remain.`)) run(() => submit(`/leave-types/${l.id}`,undefined,"DELETE")); }}>Delete</button>
                     </div>
                   ))}
-                  <button disabled={!can("leave_types.manage")} onClick={() => { setEditingLeave(null); setModal("policy"); }}>
+                  <button disabled={!can("leave_types.create")} onClick={() => { setEditingLeave(null); setModal("policy"); }}>
                     <Plus size={16} /> Add leave type
                   </button>
                 </div>
@@ -1101,7 +1111,7 @@ function App() {
                         </small>
                       </span>
                       <button
-                        aria-label="Delete calendar day" disabled={!can("calendar.manage")}
+                        aria-label="Delete calendar day" disabled={!can("calendar.delete")}
                         onClick={() =>
                           run(() =>
                             submit(`/calendar/${d.id}`, undefined, "DELETE"),
@@ -1112,7 +1122,7 @@ function App() {
                       </button>
                     </div>
                   ))}
-                  <button disabled={!can("calendar.manage")} onClick={() => setModal("calendar")}>
+                  <button disabled={!canAny("calendar.create","calendar.update")} onClick={() => setModal("calendar")}>
                     <Plus size={16} /> Add calendar override
                   </button>
                 </div>
@@ -1123,31 +1133,32 @@ function App() {
               ]}/><Pager value={auditMeta} onChange={setAuditPage}/>
             </>
           )}
-          {page==="roles" && user.role==="owner" && <>
+          {page==="roles" && can("roles.view") && <>
             <div className="section-heading"><h2>Roles</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-role");}}>Create role</button></div>
             <p>Each user has one role, plus optional direct permissions. Effective access is the union of both. Owner always has full access. Team membership does not grant account permissions.</p>
-            <div className="request-grid">{accessRoles.map(r=><div className="card setting" key={r.id}><h2>{r.display_name || r.name}</h2><small>{r.slug} · {r.system?"Initial role":"Custom role"}</small><p>{r.slug==="owner"?"All permissions automatically":r.permissions.map(p=>p.display_name || p.name).join(", ")||"No permissions"}</p>{r.slug!=="owner" && <button onClick={()=>{setAccessEdit(r);setModal("access-role");}}>Edit role</button>}{!r.system && <button onClick={()=>{if(confirm(`Delete role ${r.display_name || r.name}? Reassign its users first.`))run(()=>submit(`/roles/${r.id}`,undefined,"DELETE"));}}>Delete role</button>}</div>)}</div>
+            <div className="request-grid">{accessRoles.map(r=><div className="card setting" key={r.id}><h2>{r.display_name || r.name}</h2><small>{r.slug} · {r.system?"Initial role":"Custom role"}</small><p>{r.slug==="owner"?"All permissions automatically":r.permissions.filter(p=>!p.deprecated).map(p=>p.display_name || p.name).join(", ")||"No permissions"}</p>{r.slug!=="owner" && can("roles.update") && <button onClick={()=>{setAccessEdit(r);setModal("access-role");}}>Edit role</button>}{!r.system && can("roles.delete") && <button onClick={()=>{if(confirm(`Delete role ${r.display_name || r.name}? Reassign its users first.`))run(()=>submit(`/roles/${r.id}`,undefined,"DELETE"));}}>Delete role</button>}</div>)}</div>
           </>}
-          {page==="permissions" && user.role==="owner" && <>
+          {page==="permissions" && can("permissions.view") && <>
             <div className="section-heading"><h2>Permissions</h2><button className="primary" onClick={()=>{setAccessEdit(null);setModal("access-permission");}}>Create permission</button></div>
             <p>Built-in keys protect existing features. Custom keys can be attached to new features through the backend permission middleware.</p>
             <DataTable rows={permissions} rowKey={p=>p.id} label="Permissions" columns={[
               {key:"name",title:"Permission",value:p=>p.display_name||p.name,render:p=><strong>{p.display_name||p.name}</strong>},
               {key:"slug",title:"Key",value:p=>p.slug,render:p=><code className="permission-key">{p.slug}</code>},
-              {key:"scope",title:"Type",value:p=>p.system?"Built-in":"Custom",render:p=><Badge value={p.system?"built_in":"custom"}/>},
-              {key:"actions",title:"Actions",actions:true,value:()=>"",render:p=><div className="table-actions"><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system&&<button onClick={()=>{if(confirm(`Delete ${p.display_name||p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>},
+              {key:"scope",title:"Type",value:p=>p.deprecated?"Legacy":p.system?"Built-in":"Custom",render:p=><Badge value={p.deprecated?"legacy":p.system?"built_in":"custom"}/>},
+              {key:"actions",title:"Actions",actions:true,value:()=>"",render:p=><div className="table-actions"><button onClick={()=>{setAccessEdit(p);setModal("access-permission");}}>Edit</button>{!p.system&&can("permissions.delete")&&<button onClick={()=>{if(confirm(`Delete ${p.display_name||p.name} and remove all its grants?`))run(()=>submit(`/permissions/${p.id}`,undefined,"DELETE"));}}>Delete</button>}</div>},
             ]}/>
 
           </>}
-          {page==="team-home" && can("home_office.manage") && <>
-            <div className="section-heading"><h2>Team home-office assignments</h2><button className="primary" onClick={()=>setModal("team-home")}>Assign home office</button></div>
+          {page==="team-home" && can("home_office.view") && <>
+            <div className="section-heading"><h2>Team home-office assignments</h2><button disabled={!can("home_office.assign")} className="primary" onClick={()=>setModal("team-home")}>Assign home office</button></div>
             <p>Assign one team or all teams for an inclusive date range. Members still capture their face for check-in and checkout. Overlapping assignments are allowed; any active assignment applies.</p>
             <DataTable rows={teamHome.data} rowKey={r=>r.id} label="Team home office" columns={[
               {key:"team",title:"Team",value:r=>r.team_name||"All teams"},{key:"start",title:"First day",value:r=>r.start_date,render:r=>date(r.start_date)},{key:"end",title:"Last day",value:r=>r.end_date,render:r=>date(r.end_date)},
               {key:"creator",title:"Assigned by",value:r=>r.creator},{key:"status",title:"Status",value:r=>r.cancelled_at?"Cancelled":r.end_date<dhakaToday()?"Expired":r.start_date>dhakaToday()?"Scheduled":"Active"},{key:"reason",title:"Reason",value:r=>r.reason},
-              {key:"actions",title:"Actions",actions:true,value:()=>"",render:r=>!r.cancelled_at&&<button onClick={()=>{if(confirm("Cancel this assignment? Recorded attendance remains unchanged."))run(()=>submit(`/team-home-office/${r.id}`,undefined,"DELETE"));}}>Cancel assignment</button>},
+              {key:"actions",title:"Actions",actions:true,value:()=>"",render:r=>!r.cancelled_at&&can("home_office.cancel")&&<button onClick={()=>{if(confirm("Cancel this assignment? Recorded attendance remains unchanged."))run(()=>submit(`/team-home-office/${r.id}`,undefined,"DELETE"));}}>Cancel assignment</button>},
             ]}/>
           </>}
+          {page==="profile" && can("profile.view_self") && <div className="card setting"><h2>My profile</h2><p>{user.name} · {user.email}</p><button onClick={()=>viewProfile()}>View my profile</button>{can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}{can("profile.change_password")&&<button onClick={()=>setModal("password")}>Change password</button>}</div>}
           <footer className="page-footer">
             attendance<span>Built around your working day.</span>
           </footer>
@@ -1194,6 +1205,7 @@ function App() {
             )}
             {["in", "out", "enroll"].includes(modal) ? (
               <CameraChallenge
+                allowed={modal==="enroll"?can(enrollmentUser?"face.enroll_others":"face.enroll_self"):can(modal==="in"?"attendance.check_in":"attendance.check_out")}
                 purpose={modal as "enroll" | "in" | "out"}
                 request={api}
                 target={modal === "enroll" ? enrollmentUser || undefined : undefined}
@@ -1214,35 +1226,39 @@ function App() {
                 days={days}
                 onCancel={() => setModal(null)}
                 leaves={leaves}
-                busy={busy}
+                busy={busy || !can("applications.create_"+modal)}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "profile" && profileData ? (
+              <div className="profile-details"><h3>{profileData.name}</h3><p>{profileData.email}</p><p>{profileData.designation||"No designation"}</p><p>{profileData.phone||"No phone number"}</p><p>{profileData.role_name}</p><p>Work slot: {profileData.slot_start?.slice(0,5)||"Inherited"} – {profileData.slot_end?.slice(0,5)||"Inherited"}</p>{profileData.id===user.id&&can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}</div>
+            ) : modal === "edit-profile" ? (
+              <form onSubmit={e=>{e.preventDefault();run(()=>submit("/profile",Object.fromEntries(new FormData(e.currentTarget)),"PUT"));}}><Field title="Name"><input name="name" defaultValue={user.name} required maxLength={150}/></Field><Field title="Phone"><input name="phone" defaultValue={user.phone||""} maxLength={50}/></Field><button className="primary wide" disabled={busy||!can("profile.update_self")}>Save profile</button></form>
             ) : modal === "team-home" ? (
               <form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(()=>submit("/team-home-office",{...f,team_id:f.team_id?Number(f.team_id):null}));}}>
                 <Field title="Team"><select name="team_id" aria-label="Team"><option value="">All teams</option>{teamHome.teams.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>
                 <div className="two"><Field title="First day"><input type="date" name="start_date" defaultValue={dhakaToday()} required/></Field><Field title="Last day"><input type="date" name="end_date" defaultValue={dhakaToday()} required/></Field></div>
                 <Field title="Reason"><textarea name="reason" required minLength={5} maxLength={2000}/></Field>
                 <p>No employee approval request is required for an authorized team assignment. Unassigned users are excluded from All teams.</p>
-                <button className="primary wide" disabled={busy}>Save home-office assignment</button>
+                <button className="primary wide" disabled={busy || !can("home_office.assign")}>Save home-office assignment</button>
               </form>
             ) : modal === "user-access" && editing ? (
               <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);run(()=>submit(`/users/${editing.id}/access`,{role_id:Number(f.get("role_id")),permission_ids:f.getAll("permission_ids").map(Number)},"PUT"));}}>
                 <h3>{editing.name}</h3><Field title="Assigned role"><select name="role_id" aria-label="Assigned role" defaultValue={editing.role_id} required>{accessRoles.map(r=><option key={r.id} value={r.id}>{r.display_name || r.name}</option>)}</select></Field>
                 <h3>Additional user permissions</h3><p>These add to the role's permissions; unchecking removes only the direct grant.</p><PermissionChoices permissions={permissions} selected={editing.direct_permission_ids||[]} />
-                <button className="primary wide" disabled={busy}>Save user access</button>
+                <button className="primary wide" disabled={busy || !can("users.assign_access")}>Save user access</button>
               </form>
             ) : modal === "access-role" || modal === "access-permission" ? (
               <form onSubmit={e=>{e.preventDefault();const f=new FormData(e.currentTarget);const isRole=modal==="access-role";run(()=>submit(`/${isRole?"roles":"permissions"}${accessEdit?`/${accessEdit.id}`:""}`,{name:f.get("name"),slug:f.get("slug"),...(isRole?{permission_ids:f.getAll("permission_ids").map(Number)}:{})},accessEdit?"PUT":"POST"));}}>
                 <Field title="Display name"><input name="name" required maxLength={100} defaultValue={accessEdit?.display_name || accessEdit?.name} /></Field><Field title="Permission or role key"><input name="slug" required readOnly={accessEdit?.system} pattern={modal==="access-role"?"[a-z][a-z0-9_]*":"[a-z][a-z0-9_.]*"} defaultValue={accessEdit?.slug} placeholder={modal==="access-role"?"custom_role":"feature.action"} /></Field>
                 {modal==="access-role" && <PermissionChoices permissions={permissions} selected={accessEdit && "permissions" in accessEdit ? accessEdit.permissions.map(p=>p.id):[]} />}
-                <button className="primary wide" disabled={busy}>Save {modal==="access-role"?"role":"permission"}</button>
+                <button className="primary wide" disabled={busy || !can(modal==="access-role"?(accessEdit?"roles.update":"roles.create"):(accessEdit?"permissions.update":"permissions.create"))}>Save {modal==="access-role"?"role":"permission"}</button>
               </form>
             ) : modal === "slot" && slotTarget ? (
               <form onSubmit={e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.currentTarget));run(()=>submit(`/work-slots/${slotTarget.kind}/${slotTarget.id}`,{slot_start:f.slot_start||null,slot_end:f.slot_end||null,slot_team_id:f.slot_team_id||null},"PUT"));}}>
                 <h3>{slotTarget.name}</h3><p>Asia/Dhaka, same-day slots. Blank times inherit the team slot or default 09:00–18:00. Changes apply to future check-ins.</p>
                 <div className="two"><Field title="Slot start"><input type="time" name="slot_start" defaultValue={slotTarget.slot_start?.slice(0,5)||""} /></Field><Field title="Slot end"><input type="time" name="slot_end" defaultValue={slotTarget.slot_end?.slice(0,5)||""} /></Field></div>
                 {slotTarget.kind==="users" && <Field title="Team slot to inherit"><select name="slot_team_id" defaultValue={slotTarget.slot_team_id||""}><option value="">First configured team (lowest ID), then default</option>{teams.filter(t=>t.members.some(m=>m.id===slotTarget.id)).map(t=><option key={t.id} value={t.id}>{t.name}</option>)}</select></Field>}
-                <button className="primary wide" disabled={busy}>Save work slot</button>
+                <button className="primary wide" disabled={busy || !can(slotTarget.kind==="users"?"work_slots.update_user":"work_slots.update_team")}>Save work slot</button>
               </form>
             ) : modal === "import" ? (
               <form onSubmit={(e) => { e.preventDefault(); const f=new FormData(e.currentTarget); run(() => submit("/users/import",f)); }}>
@@ -1250,7 +1266,7 @@ function App() {
                 <p>Required headers: name,email,password. Optional: role,active,designation,phone. Passwords must have at least 12 characters. Active accepts true/false or 1/0.</p>
                 <a href="data:text/csv;charset=utf-8,name%2Cemail%2Cpassword%2Crole%2Cactive%2Cdesignation%2Cphone%0AExample%20User%2Cemployee%40example.com%2CReplace-this-password%2Cemployee%2Ctrue%2CDeveloper%2C" download="users-template.csv">Download CSV template</a>
                 <Field title="CSV file"><input name="file" type="file" accept=".csv,text/csv" required /></Field>
-                <button className="primary wide" disabled={busy}>Import users</button>
+                <button className="primary wide" disabled={busy || !can("users.import")}>Import users</button>
               </form>
             ) : modal === "person" ? (
               <form
@@ -1320,7 +1336,7 @@ function App() {
                 <Field title="Phone">
                   <input name="phone" defaultValue={editing?.phone || ""} />
                 </Field>
-                <button disabled={busy} className="primary wide">
+                <button disabled={busy || !can(editing?"users.update":"users.create")} className="primary wide">
                   Save person
                 </button>
               </form>
@@ -1371,7 +1387,7 @@ function App() {
                     </select>
                   </div>
                 ))}
-                <button disabled={busy} className="primary wide">
+                <button disabled={busy || !can("teams.members_update")} className="primary wide">
                   Save assignments
                 </button>
               </form>
@@ -1421,7 +1437,7 @@ function App() {
                     autoComplete="new-password"
                   />
                 </Field>
-                <button className="primary wide" disabled={busy}>
+                <button className="primary wide" disabled={busy || !can("profile.change_password")}>
                   Change password & sign out
                 </button>
               </form>
@@ -1473,7 +1489,7 @@ function App() {
                     </Field>
                   </>
                 )}
-                <button className="primary wide" disabled={busy}>
+                <button className="primary wide" disabled={busy || !can(modal === "team" ? "teams.create" : modal === "policy" ? (editingLeave ? "leave_types.update" : "leave_types.create") : "calendar.create")}>
                   Save
                 </button>
               </form>
@@ -1512,7 +1528,11 @@ function Pager({
   ) : null;
 }
 function PermissionChoices({permissions,selected}:{permissions:Permission[];selected:number[]}) {
- return <div className="permission-choices">{permissions.map(p=><label key={p.id}><input name="permission_ids" type="checkbox" value={p.id} defaultChecked={selected.includes(p.id)} /><span>{p.display_name || p.name}<small>{p.slug}</small></span></label>)}</div>;
+ const active=permissions.filter(p=>!p.deprecated);
+ const [query,setQuery]=useState(''),[chosen,setChosen]=useState(()=>selected.filter(id=>active.some(p=>p.id===id)));
+ const filtered=active.filter(p=>(p.display_name||p.name).toLowerCase().includes(query.toLowerCase())||p.slug.includes(query.toLowerCase()));
+ const groups=[...new Set(filtered.map(p=>p.slug.split('.')[0]))];
+ return <><Field title="Find permissions"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search module or action"/></Field>{chosen.map(id=><input key={id} type="hidden" name="permission_ids" value={id}/>)}<div className="permission-groups">{groups.map(group=><fieldset key={group}><legend>{group.replaceAll('_',' ')}</legend><div className="permission-choices">{filtered.filter(p=>p.slug.split('.')[0]===group).map(p=><label key={p.id}><input type="checkbox" checked={chosen.includes(p.id)} onChange={e=>setChosen(e.target.checked?[...chosen,p.id]:chosen.filter(id=>id!==p.id))}/><span>{p.display_name||p.name}<small>{p.slug}</small></span></label>)}</div></fieldset>)}</div></>;
 }
 function DocumentUpload({required}: {required: boolean}) {
  const input=useRef<HTMLInputElement>(null);

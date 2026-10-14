@@ -1199,3 +1199,5 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 .dataset-empty {padding:24px;text-align:center;color:#73877e;}
 .permission-key {background:#f0f6f3;padding:5px 8px;border-radius:6px;white-space:nowrap;font-size:12px;}
 @media(max-width:600px){.dataset-toolbar small{margin-left:0;flex-basis:100%;}.dataset td,.dataset th{padding:12px;}}
+
+.permission-groups {max-height:440px;overflow:auto;margin:16px 0;}.permission-groups fieldset{border:1px solid #e1e9e4;border-radius:10px;margin:0 0 14px;padding:12px;}.permission-groups legend{text-transform:capitalize;font-weight:600;padding:0 8px;}.permission-groups .permission-choices{max-height:none;margin:0;overflow:visible;}
