@@ -21,13 +21,13 @@ Use the owner credentials generated in the backend `.env`. Create people and tea
 2. **Look forward:** keep your face inside the oval with your eyes open. Press **I’m ready — capture** and hold still through the countdown.
 3. **Look left:** follow the visual example and turn your head a little to your left, about 20°. Keep your face visible, then press **I’m ready — capture**.
 4. **Look right:** turn your head slightly to your right, keep your eyes open, and press **I’m ready — capture**. The result saves automatically after this third check passes. Enrollment has no eye close/open step.
-5. Enrollment unlocks the workspace. Check-in and checkout still use a front view, one random head turn, and the eye close/open check. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
+5. Enrollment unlocks the workspace. For check-in or checkout, start the camera, look forward and press **Capture & check in/out** once. The backend checks the enrolled face and a passive anti-spoof classifier; there are no attendance head turns or eye-closing steps. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
 
 For owner-assisted enrollment: finish your own enrollment, open **People**, select **Enroll face** beside the target user, confirm their identity and consent, and capture that person through the same three steps. Their account then opens normally. Already enrolled profiles must be reset before replacement.
 
 There is no file/photo upload option. Camera permission failures show retry instructions, and switching away from the page stops the camera and requires a fresh session. Old single-photo enrollments must complete the new guided flow before attendance is enabled; the old face must match during that upgrade. Ask an owner to reset or help enroll a profile if needed.
 
-Motion checks help reject a static photo. They are not certified anti-spoofing and cannot guarantee protection against replayed videos, manipulated frames or virtual cameras. Real-camera accuracy needs testing in your environment.
+Attendance uses a trained passive anti-spoof classifier to reject suspected printed/screen photos and uncertain captures. A single webcam photo cannot guarantee rejection of all printed photographs, screens, replayed videos or virtual cameras. Model accuracy must be evaluated with your devices. Real-camera accuracy needs testing in your environment.
 
 ## Use a phone or tablet on the same Wi-Fi
 
@@ -69,4 +69,10 @@ npx playwright install chromium
 npm test
 ```
 
-The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
+The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, single-photo attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
+
+## Update for single-photo attendance
+
+Update both repositories together. Rebuild backend `api`, `worker` and **face**, run its migration, and recreate the services using the backend README. The face image now downloads checksum-pinned anti-spoof model weights during the build. Keep the API/service key and enrolled templates intact. Then restart this frontend after `git pull --ff-only` and `npm ci`.
+
+The supported flow has no file picker. A face mismatch, suspected spoof, low-quality capture or unavailable verifier records no attendance and shows a retry message. Reusing exactly the same photo is blocked. Changing camera/lighting may help a genuine user's false rejection; there is no bypass button. No claim of 100% photo-attack rejection is made.

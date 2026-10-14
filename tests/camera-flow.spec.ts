@@ -34,12 +34,20 @@ async function workspace(page: Page, owner = false) {
       }
       challenges.push(`${purpose}:${steps()[step]}`);
       step++; value = challenge();
+    } else if (path.endsWith("/capture")) {
+      expect(purpose).not.toBe("enroll");
+      const body = req.postData() || "";
+      expect(body).toContain('name="photo"');
+      expect(body).toContain('name="nonce"');
+      expect(body).not.toContain('name="frames[]"');
+      step = 1;
+      value = { ...challenge(), total: 1, pose: null, complete: true };
     } else if (path === "/api/face/enroll") {
       expect(step).toBe(3);
       if (subject === 1) enrolled = true; else targetEnrolled = true;
       value = { face_enrolled: true, user_id: subject, message: "Face enrolled successfully." };
     } else if (path === "/api/attendance" && req.method() === "POST") {
-      expect(step).toBe(3);
+      expect(step).toBe(1);
       const action = req.postDataJSON().action;
       expect(action).toBe(purpose);
       attendance = { id: 1, user_id: 1, name: user.name, work_date: "2026-10-13", check_in: "2026-10-13T03:15:30.000000Z", check_out: action === "out" ? "2026-10-13T12:45:40.000000Z" : null, mode: "office" };
@@ -83,10 +91,10 @@ test("phone self-enrollment, retry, check-in and checkout show server dates", as
   await verifySteps(page, 3, true);
   await expect(page.getByRole("button", { name: "Capture & check in" })).toBeVisible();
   await page.getByRole("button", { name: "Capture & check in" }).click();
-  await verifySteps(page, 3);
+  await singleCapture(page,"Capture & check in");
   await expect(page.locator(".clock-times")).toContainText("13 Oct 2026, 09:15:30");
   await page.getByRole("button", { name: "Capture & check out" }).click();
-  await verifySteps(page, 3);
+  await singleCapture(page,"Capture & check out");
   await expect(page.locator(".clock-times")).toContainText("13 Oct 2026, 18:45:40");
   await expect(page.getByRole("button", { name: "Workday complete" })).toBeDisabled();
   await page.getByRole("button", { name: "Attendance", exact: true }).click();
@@ -134,3 +142,13 @@ test("owner enrolls a selected user through three steps", async ({ page }) => {
   await expect(page.locator("tbody")).toContainText("Enrolled");
   await expect(page.getByRole("button", { name: "Enroll face", exact: true })).toHaveCount(0);
 });
+
+async function singleCapture(page: Page, label: string) {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("checkbox").check();
+  await dialog.getByRole("button",{ name:"Start camera",exact:true }).click();
+  await expect(dialog.locator(".camera-steps")).toHaveCount(0);
+  await expect(dialog.getByText("Close & open eyes",{exact:true})).toHaveCount(0);
+  await dialog.getByRole("button",{name:label,exact:true}).click();
+  await expect(dialog).toHaveCount(0);
+}
