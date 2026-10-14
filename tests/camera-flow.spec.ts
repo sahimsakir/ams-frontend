@@ -11,7 +11,7 @@ async function workspace(page: Page, owner = false) {
   let retryOnce = true;
   const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true };
   const challenges: string[] = [];
-  const steps = () => purpose === "enroll" ? ["front", "left", "right"] : ["front", "left", "blink"];
+  const steps = () => purpose === "enroll" ? ["front", "left", "right"] : ["capture", "left"];
   const challenge = () => ({ id: `session-${session}`, step, total: steps().length, pose: steps()[step] || null, nonce: `nonce-${step}`, complete: step === steps().length, expires_at: new Date(Date.now() + 600000).toISOString() });
   await page.addInitScript(() => sessionStorage.setItem("ams_token", "test-token"));
   await page.route("**/api/**", async (route) => {
@@ -41,13 +41,13 @@ async function workspace(page: Page, owner = false) {
       expect(body).toContain('name="nonce"');
       expect(body).not.toContain('name="frames[]"');
       step = 1;
-      value = { ...challenge(), total: 1, pose: null, complete: true };
+      value = challenge();
     } else if (path === "/api/face/enroll") {
       expect(step).toBe(3);
       if (subject === 1) enrolled = true; else targetEnrolled = true;
       value = { face_enrolled: true, user_id: subject, message: "Face enrolled successfully." };
     } else if (path === "/api/attendance" && req.method() === "POST") {
-      expect(step).toBe(1);
+      expect(step).toBe(2);
       const action = req.postDataJSON().action;
       expect(action).toBe(purpose);
       attendance = { id: 1, user_id: 1, name: user.name, work_date: "2026-10-13", check_in: "2026-10-13T03:15:30.000000Z", check_out: action === "out" ? "2026-10-13T12:45:40.000000Z" : null, mode: "office" };
@@ -150,5 +150,6 @@ async function singleCapture(page: Page, label: string) {
   await expect(dialog.locator(".camera-steps")).toHaveCount(0);
   await expect(dialog.getByText("Close & open eyes",{exact:true})).toHaveCount(0);
   await dialog.getByRole("button",{name:label,exact:true}).click();
-  await expect(dialog).toHaveCount(0);
+  await expect(dialog.getByRole("heading",{name:"Turn your head slightly to your LEFT"})).toBeVisible();
+  await expect(dialog).toHaveCount(0,{timeout:20000});
 }
