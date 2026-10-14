@@ -88,3 +88,9 @@ Refresh the browser and reopen the camera dialog for a fresh session. Enrollment
 Forward/left/right checks remain required, with four fresh frames verified per pose. The preparation countdown is now one second, and frames are sampled 150 ms apart with no unused delay after the final frame. This reduces the deliberate frontend wait from about four seconds to about 1.45 seconds per pose (roughly eight seconds saved over three poses). Duplicate frames are skipped briefly while awaiting a fresh image, with a five-second stalled-camera timeout. Camera encoding, network and server inference time are additional and depend on the device. Position your head before selecting **I’m ready — capture**.
 
 For this frontend timing update, pull the frontend repository and restart Vite, then refresh the browser. No backend rebuild or migration is needed.
+
+### Application forms and owner administration
+
+Leave and overtime use numbered sections, date summaries, private document uploads and applicant/review cards without a Slack field. Owners manage leave types in Settings and users/CSV imports in People. Download the CSV template from the import dialog. Deletions retain historical records; user self-deletion and deletion with pending work are blocked.
+
+Pull both repositories for this release. Run the backend migration and rebuild api/worker as documented in the backend README, then run `npm ci` and `npm run dev` here.

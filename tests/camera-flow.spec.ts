@@ -172,3 +172,33 @@ test("enrollment does not submit duplicated frames from a stalled camera", async
   expect(submissions).toBe(0);
   await expect(capture).toBeEnabled();
 });
+
+test("responsive leave and overtime forms submit multipart documents without Slack", async ({page}) => {
+ await page.setViewportSize({width:390,height:844});
+ await workspace(page,true);
+ await page.route("**/api/leave-types",r=>r.fulfill({json:[{id:1,name:"Casual leave",annual_limit:10}]}));
+ await page.reload();
+ await page.getByRole("button",{name:/Apply for leave/}).click();
+ const dialog=page.getByRole("dialog");
+ await expect(dialog.getByText("Type of leave",{exact:false})).toBeVisible();
+ await expect(dialog.getByText(/Slack/)).toHaveCount(0);
+ await dialog.getByRole("radio").check();
+ await dialog.getByLabel("First day").fill("2026-10-18");
+ await dialog.getByLabel("Last day").fill("2026-10-19");
+ await expect(dialog.getByText("2 working day(s) selected")).toBeVisible();
+ await dialog.getByLabel("Reason",{exact:true}).fill("Personal appointment");
+ const sent=page.waitForRequest(r=>r.url().endsWith('/api/applications')&&r.method()==='POST');
+ await dialog.getByRole("button",{name:/Submit Leave request/i}).click();
+ expect((await sent).postData()).toContain('name="leave_type_id"');
+ await expect(dialog).toHaveCount(0);
+ await page.getByRole("button",{name:/Record overtime/}).click();
+ await page.getByLabel("First day").fill("2026-10-18");
+ await page.getByLabel("Last day").fill("2026-10-20");
+ await page.getByLabel("Total overtime minutes",{exact:false}).fill("180");
+ await page.getByLabel("Reason",{exact:true}).fill("Approved release support");
+ await page.getByLabel("Approval document (required)").setInputFiles({name:'approval.png',mimeType:'image/png',buffer:Buffer.from('test')});
+ const overtime=page.waitForRequest(r=>r.url().endsWith('/api/applications')&&r.method()==='POST');
+ await page.getByRole('button',{name:/Submit Overtime request/i}).click();
+ const body=(await overtime).postData()||'';
+ expect(body).toContain('name="document"'); expect(body).toContain('2026-10-20');
+});

@@ -52,6 +52,8 @@ type Approval = {
   comment?: string;
 };
 type Application = {
+  has_document?: boolean;
+  document_name?: string;
   id: number;
   user_id: number;
   kind: string;
@@ -139,6 +141,11 @@ const time = (s?: string | null) => {
     hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
   });
 };
+async function downloadDocument(id: number, name: string) {
+ const response=await fetch(`${API}/applications/${id}/document`,{headers:{Authorization:`Bearer ${token}`}});
+ if(!response.ok) throw new Error("Could not download document.");
+ const url=URL.createObjectURL(await response.blob()); const a=document.createElement("a"); a.href=url; a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 function Badge({ value }: { value: string }) {
   return <span className={"badge " + value}>{label(value)}</span>;
 }
@@ -179,6 +186,7 @@ function App() {
     [modal, setModal] = useState<string | null>(null),
     [enrollmentUser, setEnrollmentUser] = useState<User | null>(null),
     [editing, setEditing] = useState<User | null>(null),
+    [editingLeave, setEditingLeave] = useState<Leave | null>(null),
     [editingTeam, setEditingTeam] = useState<Team | null>(null),
     [reqPage, setReqPage] = useState(1),
     [attPage, setAttPage] = useState(1),
@@ -442,6 +450,8 @@ function App() {
                 : ""}
           </h4>
           <p>{a.reason}</p>
+          {a.minutes && <p>{a.minutes} overtime minutes</p>}
+          {a.has_document && <button onClick={() => run(() => downloadDocument(a.id,a.document_name || "document"))}>Download supporting document</button>}
           <div className="reviewers">
             {a.approvals.map((x) => (
               <span key={x.id} title={x.comment || ""}>
@@ -974,6 +984,7 @@ function App() {
             <>
               <div className="section-heading">
                 <h2>{people.length} people in your workspace</h2>
+                <button onClick={() => setModal("import")}>Import CSV</button>
                 <button
                   className="primary"
                   onClick={() => {
@@ -1017,6 +1028,7 @@ function App() {
                             >
                               Edit
                             </button>
+                            {p.id !== user.id && <button onClick={() => { if (confirm(`Delete ${p.name}? Historical records will be retained.`)) run(() => submit(`/users/${p.id}`, undefined, "DELETE")); }}>Delete</button>}
                             {!p.face_enrolled && <button onClick={() => { setEnrollmentUser(p); setModal("enroll"); }}>Enroll face</button>}
                             {p.face_reset_available && (
                               <button
@@ -1056,9 +1068,11 @@ function App() {
                     <div className="policy-row" key={l.id}>
                       <strong>{l.name}</strong>
                       <span>{l.annual_limit} days / year</span>
+                      <button onClick={() => { setEditingLeave(l); setModal("policy"); }}>Edit</button>
+                      <button onClick={() => { if(confirm(`Delete ${l.name}? Past requests will remain.`)) run(() => submit(`/leave-types/${l.id}`,undefined,"DELETE")); }}>Delete</button>
                     </div>
                   ))}
-                  <button onClick={() => setModal("policy")}>
+                  <button onClick={() => { setEditingLeave(null); setModal("policy"); }}>
                     <Plus size={16} /> Add leave type
                   </button>
                 </div>
@@ -1126,7 +1140,7 @@ function App() {
       {modal && (
         <div className="modal-overlay">
           <section
-            className="modal"
+            className={`modal ${["leave","overtime"].includes(modal) ? "application-modal" : ""}`}
             role="dialog"
             aria-modal="true"
             aria-label={label(modal)}
@@ -1180,10 +1194,21 @@ function App() {
             ) : ["leave", "home_office", "overtime"].includes(modal) ? (
               <RequestForm
                 kind={modal}
+                user={user}
+                days={days}
+                onCancel={() => setModal(null)}
                 leaves={leaves}
                 busy={busy}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "import" ? (
+              <form onSubmit={(e) => { e.preventDefault(); const f=new FormData(e.currentTarget); run(() => submit("/users/import",f)); }}>
+                <p>Import up to 500 new users. Existing emails are rejected; all rows must be valid before any users are created.</p>
+                <p>Required headers: name,email,password. Optional: role,active,designation,phone. Passwords must have at least 12 characters. Active accepts true/false or 1/0.</p>
+                <a href="data:text/csv;charset=utf-8,name%2Cemail%2Cpassword%2Crole%2Cactive%2Cdesignation%2Cphone%0AExample%20User%2Cemployee%40example.com%2CReplace-this-password%2Cemployee%2Ctrue%2CDeveloper%2C" download="users-template.csv">Download CSV template</a>
+                <Field title="CSV file"><input name="file" type="file" accept=".csv,text/csv" required /></Field>
+                <button className="primary wide" disabled={busy}>Import users</button>
+              </form>
             ) : modal === "person" ? (
               <form
                 onSubmit={(e) => {
@@ -1375,22 +1400,24 @@ function App() {
                       modal === "team"
                         ? "/teams"
                         : modal === "policy"
-                          ? "/leave-types"
+                          ? (editingLeave ? `/leave-types/${editingLeave.id}` : "/leave-types")
                           : "/calendar",
                       modal === "calendar"
                         ? { ...f, is_working: f.is_working === "true" }
                         : f,
+                      modal === "policy" && editingLeave ? "PUT" : "POST",
                     ),
                   );
                 }}
               >
                 <Field title="Name">
-                  <input name="name" required />
+                  <input name="name" defaultValue={modal === "policy" ? editingLeave?.name : ""} required />
                 </Field>
                 {modal === "policy" && (
                   <Field title="Annual day limit">
                     <input
                       name="annual_limit"
+                      defaultValue={editingLeave?.annual_limit}
                       type="number"
                       min="0"
                       max="366"
@@ -1449,135 +1476,36 @@ function Pager({
     </div>
   ) : null;
 }
-function RequestForm({
-  kind,
-  leaves,
-  busy,
-  onSubmit,
-}: {
-  kind: string;
-  leaves: Leave[];
-  busy: boolean;
-  onSubmit: (d: unknown) => void;
+function RequestForm({kind, leaves, busy, onSubmit, user, days, onCancel}: {
+ kind: string; leaves: Leave[]; busy: boolean; onSubmit: (d: unknown) => void;
+ user: User; days: Day[]; onCancel: () => void;
 }) {
-  const [duration, setDuration] = useState("day"),
-    [start, setStart] = useState("");
-  function send(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const d = Object.fromEntries(new FormData(e.currentTarget));
-    if (kind === "home_office") {
-      if (duration === "ongoing") d.end_date = "";
-      if (duration === "day") d.end_date = d.start_date;
-      if (duration === "month") {
-        const date = new Date(d.start_date + "T00:00:00");
-        const day = date.getDate();
-        date.setDate(1);
-        date.setMonth(date.getMonth() + 1);
-        const last = new Date(
-          date.getFullYear(),
-          date.getMonth() + 1,
-          0,
-        ).getDate();
-        date.setDate(Math.min(day, last));
-        date.setDate(date.getDate() - 1);
-        d.end_date = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-      }
-    }
-    if (kind === "overtime") d.end_date = d.start_date;
-    onSubmit({ ...d, kind, end_date: d.end_date || null });
+ const [duration,setDuration]=useState("day"), [start,setStart]=useState(""), [end,setEnd]=useState(""), [selected,setSelected]=useState("");
+ const count = (() => { if(!start || !end || end < start) return 0; let n=0; const d=new Date(start+"T00:00:00Z"), last=new Date(end+"T00:00:00Z"); for(let i=0;d<=last && i<367;i++,d.setUTCDate(d.getUTCDate()+1)) { const key=d.toISOString().slice(0,10), override=days.find(v=>v.date===key); if(kind!=="leave" || (override ? override.is_working : ![5,6].includes(d.getUTCDay()))) n++; } return n; })();
+ function send(e: FormEvent<HTMLFormElement>) {
+  e.preventDefault(); const f=new FormData(e.currentTarget); f.set("kind",kind);
+  if(kind==="home_office") {
+   if(duration==="ongoing") f.set("end_date","");
+   if(duration==="day") f.set("end_date",start);
+   if(duration==="month") { const d=new Date(start+"T00:00:00Z"), day=d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth()+1); const last=new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+1,0)).getUTCDate(); d.setUTCDate(Math.min(day,last)); d.setUTCDate(d.getUTCDate()-1); f.set("end_date",d.toISOString().slice(0,10)); }
   }
-  return (
-    <form onSubmit={send}>
-      <div className="info-banner">
-        All assigned team leads and managers/PMs receive a review notification.
-      </div>
-      {kind === "leave" && (
-        <Field title="Leave type">
-          <select required name="leave_type_id">
-            <option value="">Choose leave type</option>
-            {leaves.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name} · {l.annual_limit} days/year
-              </option>
-            ))}
-          </select>
-        </Field>
-      )}
-      {kind === "home_office" && (
-        <Field title="Arrangement">
-          <select
-            value={duration}
-            onChange={(e) => setDuration(e.target.value)}
-          >
-            <option value="day">One day</option>
-            <option value="month">One month</option>
-            <option value="range">Custom dates</option>
-            <option value="ongoing">Lifetime / no end date</option>
-          </select>
-        </Field>
-      )}
-      <div className="two">
-        <Field title="Start date">
-          <input
-            name="start_date"
-            type="date"
-            required
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-        </Field>
-        {(kind === "leave" ||
-          (kind === "home_office" && duration === "range")) && (
-          <Field title="End date">
-            <input name="end_date" type="date" min={start} required />
-          </Field>
-        )}
-        {kind === "overtime" && (
-          <Field title="Total overtime minutes">
-            <input
-              name="minutes"
-              type="number"
-              min="1"
-              max="1440"
-              required
-              placeholder="e.g. 120"
-            />
-          </Field>
-        )}
-      </div>
-      <Field title="Reason">
-        <textarea
-          name="reason"
-          minLength={5}
-          maxLength={4000}
-          required
-          rows={4}
-          placeholder="Tell your reviewers a little more…"
-        />
-      </Field>
-      {kind === "leave" && (
-        <div className="two">
-          <Field title="Emergency contact">
-            <input name="contact" />
-          </Field>
-          <Field title="Covering for you">
-            <input name="covering" />
-          </Field>
-        </div>
-      )}
-      <p className="muted">
-        {kind === "leave"
-          ? "Weekends and holidays are excluded. Pending days are reserved from your balance."
-          : kind === "home_office"
-            ? "Home office still requires actual photo check-in and check-out. An ongoing arrangement can be revoked."
-            : "Enter one day per overtime request. Approval records the requested duration; it does not change attendance times."}
-      </p>
-      <button className="primary wide" disabled={busy}>
-        {busy ? "Submitting…" : "Submit for approval"}
-        <ArrowUpRight size={17} />
-      </button>
-    </form>
-  );
+  const file=f.get("document"); if(file instanceof File && !file.size) f.delete("document"); onSubmit(f);
+ }
+ return <div className="application-layout"><form className="application-form" onSubmit={send}>
+  {kind==="leave" && <section className="form-section"><h3><b>1</b> Type of leave</h3><div className="leave-options">{leaves.map(l=><label className={`leave-option ${selected===String(l.id)?"selected":""}`} key={l.id}><input type="radio" name="leave_type_id" value={l.id} required checked={selected===String(l.id)} onChange={e=>setSelected(e.target.value)} /><span><strong>{l.name}</strong><small>{l.annual_limit} days per year</small></span></label>)}</div>{!leaves.length && <p>No leave types are available. Ask the owner to add one.</p>}</section>}
+  <section className="form-section"><h3><b>{kind==="leave"?2:1}</b> Dates</h3><p>Pick the first and last day of your request.</p>
+   {kind==="home_office" && <Field title="Arrangement"><select value={duration} onChange={e=>setDuration(e.target.value)}><option value="day">One day</option><option value="month">One month</option><option value="range">Custom dates</option><option value="ongoing">Lifetime / no end date</option></select></Field>}
+   <div className="two"><Field title="First day"><input name="start_date" type="date" required value={start} onChange={e=>setStart(e.target.value)} /></Field>{(kind!=="home_office" || duration==="range") && <Field title="Last day"><input name="end_date" type="date" required min={start} value={end} onChange={e=>setEnd(e.target.value)} /></Field>}</div>
+   {kind!=="home_office" && <div className="info-banner">{start&&end ? `${count} ${kind==="leave"?"working":"calendar"} day(s) selected` : "Days appear here once both dates are set."}</div>}
+  </section>
+  <section className="form-section"><h3><b>{kind==="leave"?3:2}</b> {kind==="overtime"?"Overtime details":"Details"}</h3>
+   {kind==="overtime" && <Field title="Total overtime minutes across the selected dates"><input name="minutes" type="number" min="1" max="1440" placeholder="e.g. 120" required /></Field>}
+   <Field title="Reason"><textarea name="reason" minLength={5} maxLength={4000} required rows={4} placeholder="Explain your request" /></Field>
+   {kind==="leave" && <div className="two"><Field title="Emergency contact number"><input name="contact" maxLength={100} placeholder="Reachable while you are away" /></Field><Field title="Covering for you"><input name="covering" maxLength={100} placeholder="Who handles your work meanwhile" /></Field></div>}
+  </section>
+  {kind!=="home_office" && <section className="form-section"><h3><b>{kind==="leave"?4:3}</b> {kind==="overtime"?"Approval document":"Supporting document"}</h3><p>{kind==="overtime"?"Attach a screenshot or document of prior approval.":"Attach supporting evidence, if needed."}</p><Field title={kind==="overtime"?"Approval document (required)":"Upload document (optional)"}><input className="document-upload" name="document" type="file" required={kind==="overtime"} accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0]; e.target.setCustomValidity(f && f.size>15*1024*1024 ? "Maximum file size is 15 MB." : "");}} /></Field><small>JPG, PNG or PDF · up to 15 MB</small></section>}
+  <div className="form-footer"><span>Check the details, then submit.</span><button type="button" onClick={onCancel}>Cancel</button><button className="primary" disabled={busy || (kind==="leave"&&!leaves.length)}>{busy?"Submitting…":`Submit ${label(kind)} request`}</button></div>
+ </form><aside className="application-aside"><div className="card"><small>Applying as</small><h3>{user.name}</h3><p>{user.designation}</p><p>{user.email}</p></div><div className="card"><h3>What happens next</h3><div className="info-banner">Sent for approval</div><p>Your assigned team leads and managers/PMs receive an email and review your request.</p><p>Track the status under Requests. Leave balances include pending reservations; weekends and holidays are excluded.</p></div></aside></div>;
 }
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

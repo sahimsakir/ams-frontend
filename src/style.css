@@ -1132,3 +1132,20 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 .camera-instructions::after { content: ""; display: block; clear: both; }
 @media (max-width: 480px) { .enrollment-required { padding: 12px; } .enrollment-gate { padding: 18px; } }
 @media (prefers-reduced-motion: reduce) { .pose-example.blink .demo-eye { animation: none; } }
+
+.application-modal { max-width: 1100px; width: calc(100% - 24px); }
+.application-layout { display:grid; grid-template-columns:minmax(0,2fr) minmax(240px,1fr); gap:24px; align-items:start; }
+.application-form { border:1px solid var(--border,#e3e8ef); border-radius:16px; overflow:hidden; }
+.form-section { padding:24px; border-bottom:1px solid #e8edf3; }
+.form-section h3 { display:flex; align-items:center; gap:12px; margin:0 0 16px; }
+.form-section h3 b { background:#eaf2fc; color:#397ec0; padding:6px 10px; border-radius:8px; font-size:14px; }
+.leave-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.leave-option { display:flex; align-items:flex-start; gap:12px; padding:16px; border:1px solid #dce4ee; border-radius:12px; cursor:pointer; }
+.leave-option input { width:18px; height:18px; margin:2px 0 0; flex-shrink:0; }
+.leave-option small { display:block; margin-top:6px; }
+.leave-option.selected { border-color:#3988d1; background:#f1f7fd; }
+.application-aside .card { padding:24px; margin-bottom:20px; overflow-wrap:anywhere; }
+.document-upload { padding:24px; border:1px dashed #cbd8e6; background:#f8fafc; width:100%; }
+.form-footer { display:flex; align-items:center; gap:12px; padding:20px; background:#f8fafc; flex-wrap:wrap; }
+.form-footer span { flex:1; color:#66758a; }
+@media(max-width:760px) { .application-layout { grid-template-columns:1fr; } .application-aside { order:-1; } .application-aside .card { padding:16px; margin-bottom:12px; } .application-aside .card:last-child { display:none; } .form-section { padding:16px; } .leave-options { grid-template-columns:1fr; } .form-footer span { flex-basis:100%; } }
