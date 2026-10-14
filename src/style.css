@@ -1149,3 +1149,15 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 .form-footer { display:flex; align-items:center; gap:12px; padding:20px; background:#f8fafc; flex-wrap:wrap; }
 .form-footer span { flex:1; color:#66758a; }
 @media(max-width:760px) { .application-layout { grid-template-columns:1fr; } .application-aside { order:-1; } .application-aside .card { padding:16px; margin-bottom:12px; } .application-aside .card:last-child { display:none; } .form-section { padding:16px; } .leave-options { grid-template-columns:1fr; } .form-footer span { flex-basis:100%; } }
+
+.upload-dropzone { position:relative; display:flex; flex-direction:column; align-items:center; gap:8px; padding:28px 16px; border:2px dashed #cbd8e6; border-radius:12px; background:#f8fafc; text-align:center; cursor:pointer; }
+.upload-dropzone:hover,.upload-dropzone.dragging,.upload-dropzone:focus-within { border-color:#3988d1; background:#edf6ff; }
+.upload-dropzone:focus-within { outline:2px solid #3988d1; outline-offset:3px; }
+.upload-native { position:absolute; inset:0; opacity:0; width:100%; height:100%; cursor:pointer; }
+.upload-icon { font-size:26px; color:#3988d1; }
+.upload-dropzone span,.upload-dropzone small { color:#66758a; }
+.upload-selected { display:flex; align-items:center; gap:12px; justify-content:space-between; padding:14px; margin-top:12px; border:1px solid #dce4ee; border-radius:10px; }
+.upload-selected div { min-width:0; overflow-wrap:anywhere; }
+.upload-selected small { display:block; margin-top:4px; color:#66758a; }
+.upload-selected button { flex-shrink:0; }
+.upload-error { color:#b42318; }

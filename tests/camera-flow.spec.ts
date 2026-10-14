@@ -196,6 +196,12 @@ test("responsive leave and overtime forms submit multipart documents without Sla
  await page.getByLabel("Last day").fill("2026-10-20");
  await page.getByLabel("Total overtime minutes",{exact:false}).fill("180");
  await page.getByLabel("Reason",{exact:true}).fill("Approved release support");
+ await page.locator('.upload-dropzone').evaluate(el=>{const dt=new DataTransfer();dt.items.add(new File(['test'],'approval.png',{type:'image/png'}));el.dispatchEvent(new DragEvent('drop',{bubbles:true,cancelable:true,dataTransfer:dt}));});
+ await expect(page.locator('.upload-selected')).toContainText('approval.png');
+ await page.getByRole('button',{name:'Remove document'}).click();
+ await expect(page.locator('.upload-selected')).toHaveCount(0);
+ await page.getByLabel("Approval document (required)").setInputFiles({name:'bad.txt',mimeType:'text/plain',buffer:Buffer.from('test')});
+ await expect(page.getByRole('alert')).toContainText('Choose a JPG, PNG or PDF');
  await page.getByLabel("Approval document (required)").setInputFiles({name:'approval.png',mimeType:'image/png',buffer:Buffer.from('test')});
  const overtime=page.waitForRequest(r=>r.url().endsWith('/api/applications')&&r.method()==='POST');
  await page.getByRole('button',{name:/Submit Overtime request/i}).click();

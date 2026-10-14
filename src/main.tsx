@@ -1,5 +1,6 @@
 import React, {
   useEffect,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode,
@@ -1476,6 +1477,30 @@ function Pager({
     </div>
   ) : null;
 }
+function DocumentUpload({required}: {required: boolean}) {
+ const input=useRef<HTMLInputElement>(null);
+ const [file,setFile]=useState<File|null>(null), [error,setError]=useState(""), [dragging,setDragging]=useState(false);
+ function select(files: FileList|null) {
+  const next=files?.[0];
+  if(!next) return;
+  const message=files!.length>1 ? "Please upload one document." : !["image/jpeg","image/png","application/pdf"].includes(next.type) ? "Choose a JPG, PNG or PDF file." : next.size>15*1024*1024 ? "Maximum file size is 15 MB." : "";
+  setError(message);
+  if(message) { if(input.current) { const transfer=new DataTransfer(); if(file) transfer.items.add(file); input.current.files=transfer.files; } return; }
+  const transfer=new DataTransfer(); transfer.items.add(next); if(input.current) input.current.files=transfer.files;
+  setFile(next);
+ }
+ return <div className="upload-control">
+  <label className={`upload-dropzone ${dragging?"dragging":""}`} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node|null))setDragging(false);}} onDrop={e=>{e.preventDefault();setDragging(false);select(e.dataTransfer.files);}}>
+   <input ref={input} className="upload-native" name="document" type="file" required={required} aria-label={required?"Approval document (required)":"Upload document (optional)"} accept="image/jpeg,image/png,application/pdf" onChange={e=>select(e.target.files)} />
+   <span className="upload-icon" aria-hidden="true">↑</span>
+   <strong>{dragging?"Drop your document here":"Click to upload or drag and drop"}</strong>
+   <span>JPG, PNG or PDF · up to 15 MB</span>
+   <small>{required?"Approval document required":"Supporting document optional"}</small>
+  </label>
+  {error && <p className="upload-error" role="alert">{error}</p>}
+  {file && <div className="upload-selected"><div><strong>{file.name}</strong><small>{(file.size/1024/1024).toFixed(2)} MB · Ready to upload</small></div><button type="button" aria-label="Remove document" onClick={()=>{setFile(null);setError("");if(input.current)input.current.value="";}}>Remove</button></div>}
+ </div>;
+}
 function RequestForm({kind, leaves, busy, onSubmit, user, days, onCancel}: {
  kind: string; leaves: Leave[]; busy: boolean; onSubmit: (d: unknown) => void;
  user: User; days: Day[]; onCancel: () => void;
@@ -1503,7 +1528,7 @@ function RequestForm({kind, leaves, busy, onSubmit, user, days, onCancel}: {
    <Field title="Reason"><textarea name="reason" minLength={5} maxLength={4000} required rows={4} placeholder="Explain your request" /></Field>
    {kind==="leave" && <div className="two"><Field title="Emergency contact number"><input name="contact" maxLength={100} placeholder="Reachable while you are away" /></Field><Field title="Covering for you"><input name="covering" maxLength={100} placeholder="Who handles your work meanwhile" /></Field></div>}
   </section>
-  {kind!=="home_office" && <section className="form-section"><h3><b>{kind==="leave"?4:3}</b> {kind==="overtime"?"Approval document":"Supporting document"}</h3><p>{kind==="overtime"?"Attach a screenshot or document of prior approval.":"Attach supporting evidence, if needed."}</p><Field title={kind==="overtime"?"Approval document (required)":"Upload document (optional)"}><input className="document-upload" name="document" type="file" required={kind==="overtime"} accept="image/jpeg,image/png,application/pdf" onChange={e=>{const f=e.target.files?.[0]; e.target.setCustomValidity(f && f.size>15*1024*1024 ? "Maximum file size is 15 MB." : "");}} /></Field><small>JPG, PNG or PDF · up to 15 MB</small></section>}
+  {kind!=="home_office" && <section className="form-section"><h3><b>{kind==="leave"?4:3}</b> {kind==="overtime"?"Approval document":"Supporting document"}</h3><p>{kind==="overtime"?"Attach a screenshot or document of prior approval.":"Attach supporting evidence, if needed."}</p><DocumentUpload required={kind==="overtime"} /></section>}
   <div className="form-footer"><span>Check the details, then submit.</span><button type="button" onClick={onCancel}>Cancel</button><button className="primary" disabled={busy || (kind==="leave"&&!leaves.length)}>{busy?"Submitting…":`Submit ${label(kind)} request`}</button></div>
  </form><aside className="application-aside"><div className="card"><small>Applying as</small><h3>{user.name}</h3><p>{user.designation}</p><p>{user.email}</p></div><div className="card"><h3>What happens next</h3><div className="info-banner">Sent for approval</div><p>Your assigned team leads and managers/PMs receive an email and review your request.</p><p>Track the status under Requests. Leave balances include pending reservations; weekends and holidays are excluded.</p></div></aside></div>;
 }
