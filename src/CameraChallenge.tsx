@@ -120,9 +120,9 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
   return <div className={`camera-flow${ready ? " is-ready" : ""}`}>
-    <p className="camera-intro">{purpose === "enroll" ? (target ? `Ask ${target.name} to sit in front of the camera. Confirm their identity and permission before starting.` : "Three quick checks: look forward, turn slightly, and close then open your eyes.") : "Complete the live camera checks to record your attendance."}</p>
+    <p className="camera-intro">{purpose === "enroll" ? (target ? `Ask ${target.name} to sit in front of the camera. Confirm their identity and permission before starting.` : "Three quick checks: look forward, look left, and look right.") : "Complete the live camera checks to record your attendance."}</p>
     <ol className="camera-steps" aria-label="Camera checks">
-      {["Look forward", "Turn slightly", "Close & open eyes"].map((title, i) => <li key={title} className={challenge?.step === i ? "current" : challenge && challenge.step > i ? "done" : ""}><span>{challenge && challenge.step > i ? "✓" : i + 1}</span>{title}</li>)}
+      {(purpose === "enroll" ? ["Look forward", "Look left", "Look right"] : ["Look forward", "Turn slightly", "Close & open eyes"]).map((title, i) => <li key={title} className={challenge?.step === i ? "current" : challenge && challenge.step > i ? "done" : ""}><span>{challenge && challenge.step > i ? "✓" : i + 1}</span>{title}</li>)}
     </ol>
     <div className="camera">
       <video ref={video} autoPlay muted playsInline aria-label="Live camera preview" />

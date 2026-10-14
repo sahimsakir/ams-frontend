@@ -11,7 +11,7 @@ async function workspace(page: Page, owner = false) {
   let retryOnce = true;
   const user = { id: 1, name: "Test Employee", email: "test@example.com", role: owner ? "owner" : "employee", active: true };
   const challenges: string[] = [];
-  const steps = () => ["front", "left", "blink"];
+  const steps = () => purpose === "enroll" ? ["front", "left", "right"] : ["front", "left", "blink"];
   const challenge = () => ({ id: `session-${session}`, step, total: steps().length, pose: steps()[step] || null, nonce: `nonce-${step}`, complete: step === steps().length, expires_at: new Date(Date.now() + 600000).toISOString() });
   await page.addInitScript(() => sessionStorage.setItem("ams_token", "test-token"));
   await page.route("**/api/**", async (route) => {
@@ -92,7 +92,7 @@ test("phone self-enrollment, retry, check-in and checkout show server dates", as
   await page.getByRole("button", { name: "Attendance", exact: true }).click();
   await expect(page.locator("tbody")).toContainText("13 Oct 2026, 09:15:30");
   await expect(page.locator("tbody")).toContainText("13 Oct 2026, 18:45:40");
-  expect(challenges.filter((p) => p.startsWith("enroll:"))).toHaveLength(3);
+  expect(challenges.filter((p) => p.startsWith("enroll:"))).toEqual(["enroll:front", "enroll:left", "enroll:right"]);
   expect(errors).toEqual([]);
 });
 

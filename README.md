@@ -19,9 +19,9 @@ Use the owner credentials generated in the backend `.env`. Create people and tea
 
 1. Sign in. If you have no verified face profile, the enrollment popup appears automatically. Read the consent, enable it, then select **Start camera**. Other workspace features stay locked until enrollment succeeds; you can still sign out.
 2. **Look forward:** keep your face inside the oval with your eyes open. Press **I’m ready — capture** and hold still through the countdown.
-3. **Turn slightly:** follow the visual example and turn your head a little left or right, about 20°. Keep your face visible, then press **I’m ready — capture**.
-4. **Close and open eyes:** face the camera and press **Start eye check**. Start with your eyes open. When **CLOSE** appears, close both eyes for about one second, then reopen. The result saves automatically after this third check passes.
-5. Enrollment unlocks the workspace. Check-in and checkout use the same three simple live-camera checks. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
+3. **Look left:** follow the visual example and turn your head a little to your left, about 20°. Keep your face visible, then press **I’m ready — capture**.
+4. **Look right:** turn your head slightly to your right, keep your eyes open, and press **I’m ready — capture**. The result saves automatically after this third check passes. Enrollment has no eye close/open step.
+5. Enrollment unlocks the workspace. Check-in and checkout still use a front view, one random head turn, and the eye close/open check. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
 
 For owner-assisted enrollment: finish your own enrollment, open **People**, select **Enroll face** beside the target user, confirm their identity and consent, and capture that person through the same three steps. Their account then opens normally. Already enrolled profiles must be reset before replacement.
 
