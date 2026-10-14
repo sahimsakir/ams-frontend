@@ -1201,3 +1201,5 @@ input[type=checkbox] { width: 20px; height: 20px; flex-shrink: 0; accent-color: 
 @media(max-width:600px){.dataset-toolbar small{margin-left:0;flex-basis:100%;}.dataset td,.dataset th{padding:12px;}}
 
 .permission-groups {max-height:440px;overflow:auto;margin:16px 0;}.permission-groups fieldset{border:1px solid #e1e9e4;border-radius:10px;margin:0 0 14px;padding:12px;}.permission-groups legend{text-transform:capitalize;font-weight:600;padding:0 8px;}.permission-groups .permission-choices{max-height:none;margin:0;overflow:visible;}
+
+.attendance-photo{margin:0}.attendance-photo img{display:block;width:100%;max-height:60vh;object-fit:contain;border-radius:12px;background:#f1f5f9}.attendance-photo figcaption{margin-top:12px;overflow-wrap:anywhere}

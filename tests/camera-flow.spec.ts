@@ -316,3 +316,25 @@ test('owner assigns one team or all teams home office by date range',async({page
  expect((await submitted).postDataJSON()).toMatchObject({team_id:4,start_date:'2026-10-20',end_date:'2026-10-25'});
  await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+test('attendance photo buttons preview both captures and respect row permissions', async ({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await workspace(page,true);
+ let allowed=true;
+ await page.route('**/api/attendance?**',r=>r.fulfill({json:{data:[{id:7,user_id:2,name:'Team Member',work_date:'2026-10-14',check_in:'2026-10-14T03:00:00Z',check_out:'2026-10-14T12:00:00Z',mode:'office',can_view_photo:allowed,has_in_photo:true,has_out_photo:true}],current_page:1,last_page:1,summary:{}}}));
+ await page.route('**/api/attendance/7/photo/*',r=>r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFncAAAAASUVORK5CYII=','base64')}));
+ await page.reload();
+ await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ for(const side of ['Check-in','Check-out']){
+  await page.getByRole('button',{name:side+' photo',exact:true}).click();
+  await expect(page.getByRole('img',{name:'Team Member · '+side+' photo'})).toBeVisible();
+  await expect(page.getByRole('dialog')).toContainText('Asia/Dhaka');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.getByRole('button',{name:'Close dialog'}).click();
+ }
+ allowed=false;
+ await page.reload();
+ await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Check-in photo',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Check-out photo',exact:true})).toHaveCount(0);
+});

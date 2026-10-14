@@ -74,6 +74,7 @@ type Application = {
   approvals: Approval[];
 };
 type Attendance = {
+  can_view_photo?: boolean; has_in_photo?: boolean; has_out_photo?: boolean;
   status?: string; leave_name?: string; slot_start?: string; slot_end?: string; working_minutes?: number | null; actual_minutes?: number | null;
   id: number;
   user_id: number;
@@ -217,6 +218,7 @@ function App() {
     [leaves, setLeaves] = useState<Leave[]>([]),
     [days, setDays] = useState<Day[]>([]),
     [modal, setModal] = useState<string | null>(null),
+    [attendancePhoto,setAttendancePhoto] = useState<{url:string;title:string;time:string}|null>(null),
     [enrollmentUser, setEnrollmentUser] = useState<User | null>(null),
     [editing, setEditing] = useState<User | null>(null),
     [editingLeave, setEditingLeave] = useState<Leave | null>(null),
@@ -236,6 +238,14 @@ function App() {
   const can = (permission: string) => !!user && (user.role === "owner" || !!user.effective_permissions?.includes(permission));
   const canAny=(...keys:string[])=>keys.some(can);
   const createKind=()=>['leave','home_office','overtime'].find(k=>can('applications.create_'+k))||'leave';
+  useEffect(()=>{if(modal!=="attendance-photo")setAttendancePhoto(null);},[modal]);
+  useEffect(()=>()=>{if(attendancePhoto)URL.revokeObjectURL(attendancePhoto.url);},[attendancePhoto]);
+  const viewAttendancePhoto=(a:Attendance,side:"in"|"out")=>run(async()=>{
+    const response=await fetch(`${API}/attendance/${a.id}/photo/${side}`,{credentials:"include",headers:{Accept:"image/*"}});
+    if(!response.ok)throw new Error("Photo unavailable or you no longer have permission to view it.");
+    setAttendancePhoto({url:URL.createObjectURL(await response.blob()),title:`${a.name} · ${side==="in"?"Check-in":"Check-out"} photo`,time:time(side==="in"?a.check_in:a.check_out)});
+    setModal("attendance-photo");
+  });
   const viewProfile=(id?:number)=>run(async()=>{const result=await api<{user:User}>(id?`/users/${id}/profile`:'/profile');setProfileData(result.user);setModal('profile');});
   async function run(fn: () => Promise<void>) {
     setBusy(true);
@@ -963,6 +973,7 @@ function App() {
                 {key:"status",title:"Status",value:a=>a.status,render:a=>label(a.status||""),formatValue:label},
                 {key:"slot_start",title:"Slot start",value:a=>a.slot_start},{key:"slot_end",title:"Slot end",value:a=>a.slot_end},
                 {key:"working_minutes",title:"Working hours",value:a=>a.working_minutes,render:a=>a.working_minutes==null?"—":minutesLabel(a.working_minutes),formatValue:v=>minutesLabel(Number(v))},
+                {key:"photos",title:"Photos",actions:true,value:()=>"",render:a=>a.can_view_photo?<div className="table-actions">{a.has_in_photo&&<button disabled={busy} onClick={()=>viewAttendancePhoto(a,"in")}>Check-in photo</button>}{a.has_out_photo&&<button disabled={busy} onClick={()=>viewAttendancePhoto(a,"out")}>Check-out photo</button>}{!a.has_in_photo&&!a.has_out_photo&&"—"}</div>:"—"},
                 {key:"actual_minutes",title:"Inside slot",value:a=>a.actual_minutes,render:a=>a.actual_minutes==null?"—":minutesLabel(a.actual_minutes),formatValue:v=>minutesLabel(Number(v))},
               ]}/>
               <Pager value={att} onChange={setAttPage} />
@@ -1229,6 +1240,8 @@ function App() {
                 busy={busy || !can("applications.create_"+modal)}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "attendance-photo" && attendancePhoto ? (
+              <figure className="attendance-photo"><img src={attendancePhoto.url} alt={attendancePhoto.title}/><figcaption><strong>{attendancePhoto.title}</strong><p>{attendancePhoto.time} · Asia/Dhaka</p></figcaption></figure>
             ) : modal === "profile" && profileData ? (
               <div className="profile-details"><h3>{profileData.name}</h3><p>{profileData.email}</p><p>{profileData.designation||"No designation"}</p><p>{profileData.phone||"No phone number"}</p><p>{profileData.role_name}</p><p>Work slot: {profileData.slot_start?.slice(0,5)||"Inherited"} – {profileData.slot_end?.slice(0,5)||"Inherited"}</p>{profileData.id===user.id&&can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}</div>
             ) : modal === "edit-profile" ? (
