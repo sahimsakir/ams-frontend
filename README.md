@@ -82,3 +82,9 @@ npm run dev
 ```
 
 Refresh the browser and reopen the camera dialog for a fresh session. Enrollment stays forward/left/right. Attendance only captures and matches an image; no movement, blinking or anti-spoof classifier is required. Face mismatches, expired proofs, unavailable verification, duplicate attendance and exact-image reuse remain blocked. A matching photograph of the enrolled person may be accepted.
+
+## Faster enrollment capture
+
+Forward/left/right checks remain required, with four fresh frames verified per pose. The preparation countdown is now one second, and frames are sampled 150 ms apart with no unused delay after the final frame. This reduces the deliberate frontend wait from about four seconds to about 1.45 seconds per pose (roughly eight seconds saved over three poses). Duplicate frames are skipped briefly while awaiting a fresh image, with a five-second stalled-camera timeout. Camera encoding, network and server inference time are additional and depend on the device. Position your head before selecting **I’m ready — capture**.
+
+For this frontend timing update, pull the frontend repository and restart Vite, then refresh the browser. No backend rebuild or migration is needed.

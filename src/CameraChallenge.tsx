@@ -103,13 +103,15 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
       const c = document.createElement("canvas");
       const data = new FormData();
       data.append("nonce", current.nonce);
-      for (let n = 3; n > 0; n--) {
+      for (let n = 1; n > 0; n--) {
         if (!active()) return;
         setStatus(purpose !== "enroll" ? `${prompts[current.pose || "left"]}. Capturing in ${n}…` : `Starting in ${n}…`);
         await pause(1000);
       }
       const blinking = current.pose === "blink";
       const count = blinking ? 16 : 4;
+      const capturedFrames = new Set<string>();
+      const captureDeadline = Date.now() + 5000;
       for (let i = 0; i < count; i++) {
         if (!active()) return;
         const v = video.current;
@@ -125,10 +127,17 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
         // for an idle canvas callback on constrained mobile browsers.
         const encoded = c.toDataURL("image/jpeg", .85).split(",")[1];
         if (!encoded) throw new Error("Capture failed. Restart the camera and retry.");
+        if (capturedFrames.has(encoded)) {
+          if (Date.now() >= captureDeadline) throw new Error("Camera frames are not updating. Restart the camera and retry.");
+          await pause(100);
+          i--;
+          continue;
+        }
+        capturedFrames.add(encoded);
         const bytes = Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0));
         const blob = new Blob([bytes], { type: "image/jpeg" });
         data.append("frames[]", blob, `frame-${i}.jpg`);
-        await pause(blinking ? 180 : 250);
+        if (i < count - 1) await pause(blinking ? 180 : 150);
       }
       if (!active()) return;
       setStatus("Checking your live camera step…");

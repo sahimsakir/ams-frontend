@@ -152,3 +152,23 @@ async function singleCapture(page: Page, label: string) {
   await dialog.getByRole("button",{name:label,exact:true}).click();
   await expect(dialog).toHaveCount(0,{timeout:20000});
 }
+
+
+test("enrollment does not submit duplicated frames from a stalled camera", async ({ page }) => {
+  await workspace(page);
+  let submissions = 0;
+  page.on("request", (r) => { if (new URL(r.url()).pathname.endsWith("/step")) submissions++; });
+  await page.getByRole("checkbox").check();
+  await page.getByRole("button", { name: "Start camera", exact: true }).click();
+  const capture = page.getByRole("button", { name: "I’m ready — capture", exact: true });
+  await expect(capture).toBeEnabled();
+  await page.evaluate(() => {
+    const canvas = document.createElement("canvas"); canvas.width = 640; canvas.height = 480;
+    const still = canvas.toDataURL("image/jpeg", .85);
+    HTMLCanvasElement.prototype.toDataURL = () => still;
+  });
+  await capture.click();
+  await expect(page.getByRole("alert")).toContainText("Camera frames are not updating");
+  expect(submissions).toBe(0);
+  await expect(capture).toBeEnabled();
+});
