@@ -105,6 +105,7 @@ type TeamHome={id:number;team_id:number|null;team_name:string|null;start_date:st
 type AttendancePage = Page<Attendance> & {facets?:Record<string,string[]>;total?:number;summary?: Record<string,number>};
 const dhakaToday = () => new Intl.DateTimeFormat("en-CA", {timeZone:"Asia/Dhaka",year:"numeric",month:"2-digit",day:"2-digit"}).format(new Date());
 const minutesLabel = (value: number) => `${Math.floor(value/60)}h ${value%60}m`;
+function attendanceStatus(a:Attendance){return a.leave_name || (a.mode==="leave"?"Leave":a.status==="absent"||a.mode==="absent"?"Absent":"Present");}
 const API = import.meta.env.VITE_API_URL || "/api";
 async function api<T>(
   path: string,
@@ -218,6 +219,7 @@ function App() {
     [leaves, setLeaves] = useState<Leave[]>([]),
     [days, setDays] = useState<Day[]>([]),
     [modal, setModal] = useState<string | null>(null),
+    [attendanceDetail,setAttendanceDetail] = useState<Attendance|null>(null),
     [attendancePhoto,setAttendancePhoto] = useState<{url:string;title:string;time:string}|null>(null),
     [enrollmentUser, setEnrollmentUser] = useState<User | null>(null),
     [editing, setEditing] = useState<User | null>(null),
@@ -963,18 +965,12 @@ function App() {
                 ["Missing exit",String(att.summary.missing_exits),"No checkout by local midnight"],
               ].map(([title,value,hint])=><div className="card attendance-stat" key={title}><h3>{title}</h3><strong>{value}</strong><p>{hint}</p></div>)}</div>}
               <p className="muted">Slots default to 09:00–18:00. Missing exits and current open shifts are excluded from hour averages. Rates use working days through today; owner totals count employee-days. Summary cards follow date/employee filters; column filters affect table rows.</p>
-              <DataTable rows={att?.data||[]} rowKey={a=>a.id} label="Attendance" remote state={attendanceTable} onChange={v=>{setAttendanceTable(v);setAttPage(1);}} facets={att?.facets} total={att?.total} columns={[
-                {key:"name",title:"Employee",value:a=>a.name},
-                {key:"work_date",title:"Date",value:a=>a.work_date,render:a=>date(a.work_date),formatValue:date},
-                {key:"check_in",title:"Check in",value:a=>a.check_in,render:a=>time(a.check_in),formatValue:time},
-                {key:"check_out",title:"Check out",value:a=>a.check_out,render:a=>a.status==="missing_exit"?"Missing exit":time(a.check_out),formatValue:time},
-                {key:"mode",title:"Workplace",value:a=>a.mode,render:a=><Badge value={a.mode}/>,formatValue:label},
-                {key:"leave_name",title:"Leave type",value:a=>a.leave_name},
-                {key:"status",title:"Status",value:a=>a.status,render:a=>label(a.status||""),formatValue:label},
-                {key:"slot_start",title:"Slot start",value:a=>a.slot_start},{key:"slot_end",title:"Slot end",value:a=>a.slot_end},
-                {key:"working_minutes",title:"Working hours",value:a=>a.working_minutes,render:a=>a.working_minutes==null?"—":minutesLabel(a.working_minutes),formatValue:v=>minutesLabel(Number(v))},
-                {key:"photos",title:"Photos",actions:true,value:()=>"",render:a=>a.can_view_photo?<div className="table-actions">{a.has_in_photo&&<button disabled={busy} onClick={()=>viewAttendancePhoto(a,"in")}>Check-in photo</button>}{a.has_out_photo&&<button disabled={busy} onClick={()=>viewAttendancePhoto(a,"out")}>Check-out photo</button>}{!a.has_in_photo&&!a.has_out_photo&&"—"}</div>:"—"},
-                {key:"actual_minutes",title:"Inside slot",value:a=>a.actual_minutes,render:a=>a.actual_minutes==null?"—":minutesLabel(a.actual_minutes),formatValue:v=>minutesLabel(Number(v))},
+              <DataTable rows={att?.data||[]} rowKey={a=>a.id} onRowClick={a=>{setAttendanceDetail(a);setModal("attendance-detail");}} label="Attendance" remote state={attendanceTable} onChange={v=>{setAttendanceTable(v);setAttPage(1);}} facets={att?.facets} total={att?.total} columns={[
+                {key:"work_date",title:"Date",value:a=>a.work_date,render:a=><span>{date(a.work_date)}{canAny("attendance.view_team","attendance.view_all")&&<small className="attendance-member">{a.name}</small>}</span>,formatValue:date},
+                {key:"check_in",title:"Check-in",value:a=>a.check_in,render:a=>time(a.check_in),formatValue:time},
+                {key:"check_out",title:"Check-out",value:a=>a.check_out,render:a=>a.status==="missing_exit"?"Missing exit":time(a.check_out),formatValue:time},
+                {key:"working_minutes",title:"Hours",value:a=>a.working_minutes,render:a=>a.working_minutes==null?"—":minutesLabel(a.working_minutes)},
+                {key:"display_status",title:"Status",value:a=>attendanceStatus(a),render:a=><Badge value={attendanceStatus(a)}/>},
               ]}/>
               <Pager value={att} onChange={setAttPage} />
             </>
@@ -1240,8 +1236,10 @@ function App() {
                 busy={busy || !can("applications.create_"+modal)}
                 onSubmit={(d) => run(() => submit("/applications", d))}
               />
+            ) : modal === "attendance-detail" && attendanceDetail ? (
+              <div className="attendance-detail"><h3>{attendanceDetail.name}</h3><dl>{[["Date",date(attendanceDetail.work_date)],["Status",attendanceStatus(attendanceDetail)],["Check-in",time(attendanceDetail.check_in)],["Check-out",attendanceDetail.status==="missing_exit"?"Missing exit":time(attendanceDetail.check_out)],["Hours",attendanceDetail.working_minutes==null?"—":minutesLabel(attendanceDetail.working_minutes)],["Workplace",label(attendanceDetail.mode)],["Leave type",attendanceDetail.leave_name||"—"],["Assigned slot",`${attendanceDetail.slot_start||"—"} – ${attendanceDetail.slot_end||"—"}`],["Hours inside slot",attendanceDetail.actual_minutes==null?"—":minutesLabel(attendanceDetail.actual_minutes)]].map(([k,v])=><div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>{attendanceDetail.can_view_photo?<div className="table-actions">{attendanceDetail.has_in_photo&&<button onClick={()=>viewAttendancePhoto(attendanceDetail,"in")}>Check-in photo</button>}{attendanceDetail.has_out_photo&&<button onClick={()=>viewAttendancePhoto(attendanceDetail,"out")}>Check-out photo</button>}</div>:<p className="muted">Photo access requires permission.</p>}</div>
             ) : modal === "attendance-photo" && attendancePhoto ? (
-              <figure className="attendance-photo"><img src={attendancePhoto.url} alt={attendancePhoto.title}/><figcaption><strong>{attendancePhoto.title}</strong><p>{attendancePhoto.time} · Asia/Dhaka</p></figcaption></figure>
+              <figure className="attendance-photo"><img src={attendancePhoto.url} alt={attendancePhoto.title}/><figcaption><button onClick={()=>setModal("attendance-detail")}>Back to attendance details</button><strong>{attendancePhoto.title}</strong><p>{attendancePhoto.time} · Asia/Dhaka</p></figcaption></figure>
             ) : modal === "profile" && profileData ? (
               <div className="profile-details"><h3>{profileData.name}</h3><p>{profileData.email}</p><p>{profileData.designation||"No designation"}</p><p>{profileData.phone||"No phone number"}</p><p>{profileData.role_name}</p><p>Work slot: {profileData.slot_start?.slice(0,5)||"Inherited"} – {profileData.slot_end?.slice(0,5)||"Inherited"}</p>{profileData.id===user.id&&can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}</div>
             ) : modal === "edit-profile" ? (

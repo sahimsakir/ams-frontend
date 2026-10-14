@@ -326,6 +326,7 @@ test('attendance photo buttons preview both captures and respect row permissions
  await page.reload();
  await page.getByRole('button',{name:'Attendance',exact:true}).click();
  for(const side of ['Check-in','Check-out']){
+  await page.locator('tbody tr').first().click();
   await page.getByRole('button',{name:side+' photo',exact:true}).click();
   await expect(page.getByRole('img',{name:'Team Member · '+side+' photo'})).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText('Asia/Dhaka');
