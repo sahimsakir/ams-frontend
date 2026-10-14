@@ -21,13 +21,13 @@ Use the owner credentials generated in the backend `.env`. Create people and tea
 2. **Look forward:** keep your face inside the oval with your eyes open. Press **I’m ready — capture** and hold still through the countdown.
 3. **Look left:** follow the visual example and turn your head a little to your left, about 20°. Keep your face visible, then press **I’m ready — capture**.
 4. **Look right:** turn your head slightly to your right, keep your eyes open, and press **I’m ready — capture**. The result saves automatically after this third check passes. Enrollment has no eye close/open step.
-5. Enrollment unlocks the workspace. For check-in or checkout, start the camera, look forward and press **Capture & check in/out** once. After matching your face, the screen prompts one small LEFT/RIGHT head turn and counts down. Turn slightly and hold; the camera verifies four frames automatically, then records attendance. No eye-closing step or extra click is needed on success. Use **Retry head-turn check** only if movement was not verified. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
+5. Enrollment unlocks the workspace. For check-in or checkout, start the camera and select **Capture & check in/out**. One image is matched against your enrolled face; attendance is recorded immediately after a successful match. There is no head turn or eye-closing check. The dashboard and attendance table show full dates and seconds in **Asia/Dhaka**, including overnight checkout.
 
 For owner-assisted enrollment: finish your own enrollment, open **People**, select **Enroll face** beside the target user, confirm their identity and consent, and capture that person through the same three steps. Their account then opens normally. Already enrolled profiles must be reset before replacement.
 
 There is no file/photo upload option. Camera permission failures show retry instructions, and switching away from the page stops the camera and requires a fresh session. Old single-photo enrollments must complete the new guided flow before attendance is enabled; the old face must match during that upgrade. Ask an owner to reset or help enroll a profile if needed.
 
-Attendance uses one brief random head turn, compared with the initial photo, to check face identity and live movement. The former passive classifier was removed after a real webcam false rejection. A single webcam photo cannot guarantee rejection of all printed photographs, screens, replayed videos or virtual cameras. Model accuracy must be evaluated with your devices. Real-camera accuracy needs testing in your environment.
+Attendance now performs **face matching only**, at the user's explicit request. A photographed print or screen image of the enrolled person may also pass. No attendance liveness/PAD check is performed. Exact previously used photo bytes are blocked, but this cannot reject re-photographed or re-encoded copies.
 
 ## Use a phone or tablet on the same Wi-Fi
 
@@ -71,9 +71,9 @@ npm test
 
 The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, single-photo attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
 
-## Update for the brief head-turn attendance check
+## Update for face-only attendance
 
-Update backend and frontend together. In the backend, rebuild **api**, **worker** and **face**, apply any pending migrations, recreate the services and clear cached configuration using its README. In this frontend:
+Update backend and frontend together. Follow backend update instructions to rebuild api/worker/face and recreate them, preserving the existing `.env`, APP_KEY and data. In this frontend:
 
 ```sh
 git pull --ff-only
@@ -81,6 +81,4 @@ npm ci
 npm run dev
 ```
 
-Reload the browser and reopen the camera dialog to start a fresh session. Enrollment remains forward/left/right. Attendance is one capture followed by one automatically captured head turn. The old passive score `FACE_LIVE_MIN_SCORE` no longer controls attendance; there is no model-weight download in the new face service.
-
-The screen shows the requested direction and a three-second countdown. Follow the prompt and keep your face in view. If verification fails, retry the movement; no attendance is written until it passes. Face mismatch, frozen frames, expired proofs and exact used-photo replays remain blocked. The check helps reject an unchanged photograph but cannot guarantee rejection of manipulated photographs, videos or virtual cameras. Real camera and attack rejection still need testing in your environment.
+Refresh the browser and reopen the camera dialog for a fresh session. Enrollment stays forward/left/right. Attendance only captures and matches an image; no movement, blinking or anti-spoof classifier is required. Face mismatches, expired proofs, unavailable verification, duplicate attendance and exact-image reuse remain blocked. A matching photograph of the enrolled person may be accepted.

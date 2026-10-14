@@ -79,7 +79,7 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
     const active = () => alive.current && attempt === generation.current;
     try {
       if (challenge.complete) { await onVerified(challenge.id); return; }
-      let current = challenge;
+      const current = challenge;
       if (purpose !== "enroll" && current.pose === "capture") {
         const v = video.current;
         if (!v || v.readyState < 2 || !v.videoWidth || !stream.current?.active) throw new Error("Camera isn’t ready. Restart it and retry.");
@@ -94,12 +94,11 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
         setStatus("Matching your enrolled face…");
         const next = await request<Challenge>(`/face/challenges/${challenge.id}/capture`, "POST", data);
         if (!active()) return;
-        if (next.complete || !["left", "right"].includes(next.pose || "")) throw new Error("Restart the camera to begin the live check.");
-        current = next;
+        if (!next.complete) throw new Error("Face verification did not complete. Restart the camera and retry.");
         setChallenge(next);
-        setStatus(prompts[next.pose!]);
-        await pause(500);
-        if (!active()) return;
+        await onVerified(next.id);
+        if (active()) stop();
+        return;
       }
       const c = document.createElement("canvas");
       const data = new FormData();
@@ -142,7 +141,7 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
     finally { running.current = false; if (alive.current) setBusy(false); }
   }
   return <div className={`camera-flow${ready ? " is-ready" : ""}`}>
-    <p className="camera-intro">{purpose === "enroll" ? (target ? `Ask ${target.name} to sit in front of the camera. Confirm their identity and permission before starting.` : "Three quick checks: look forward, look left, and look right.") : "Capture your face, then follow one quick left/right head-turn prompt. The camera checks the movement automatically; no blinking is needed."}</p>
+    <p className="camera-intro">{purpose === "enroll" ? (target ? `Ask ${target.name} to sit in front of the camera. Confirm their identity and permission before starting.` : "Three quick checks: look forward, look left, and look right.") : "Capture one image. We’ll match it against your enrolled face to record attendance."}</p>
     {purpose === "enroll" && <ol className="camera-steps" aria-label="Camera checks">
       {(purpose === "enroll" ? ["Look forward", "Look left", "Look right"] : ["Look forward", "Turn slightly", "Close & open eyes"]).map((title, i) => <li key={title} className={challenge?.step === i ? "current" : challenge && challenge.step > i ? "done" : ""}><span>{challenge && challenge.step > i ? "✓" : i + 1}</span>{title}</li>)}
     </ol>}
@@ -153,13 +152,13 @@ export function CameraChallenge({ purpose, target, request, onVerified }: Props)
       {!ready && <span className="camera-placeholder">Your live camera preview</span>}
     </div>
     <div ref={instructions} className="camera-instructions" aria-live="polite" aria-atomic="true">
-      {challenge && (purpose === "enroll" || ["left", "right"].includes(challenge.pose || "")) && <>{purpose === "enroll" && <><small>STEP {Math.min(challenge.step + 1, challenge.total)} OF {challenge.total}</small><progress value={challenge.step} max={challenge.total} aria-label="Verified camera steps" /></>}<div className={`pose-example ${challenge.pose || "front"}`} aria-hidden="true"><svg viewBox="0 0 100 90"><g className="demo-face"><ellipse cx="50" cy="43" rx="23" ry="30"/><path d="M44 53 Q50 58 56 53"/><path className="demo-nose" d="M50 36 L48 46 L53 46"/><ellipse className="demo-eye" cx="39" cy="34" rx="3" ry="4"/><ellipse className="demo-eye" cx="61" cy="34" rx="3" ry="4"/></g>{challenge.pose === "left" && <path className="demo-arrow" d="M24 76 H5 M5 76 L12 69 M5 76 L12 83"/>}{challenge.pose === "right" && <path className="demo-arrow" d="M76 76 H95 M95 76 L88 69 M95 76 L88 83"/>}</svg></div><h3>{challenge.complete ? "All steps verified" : prompts[challenge.pose || "front"]}</h3></>}
-      <p>{status || (purpose !== "enroll" ? (challenge?.pose === "left" || challenge?.pose === "right" ? "Turn slightly in the shown direction and hold. The camera captures automatically after the countdown. If needed, press Retry head-turn check." : "Look forward with your face inside the oval, then capture. One quick head turn confirms live movement.") : challenge?.pose === "blink" ? "Press Start eye check. Keep eyes open first. When CLOSE appears, close both eyes for one second, then reopen them." : challenge?.pose === "left" || challenge?.pose === "right" ? "Turn a little, about 20°. Keep your whole face in view and hold still. Then press I’m ready — capture." : "Keep your face inside the oval with your eyes open. Press I’m ready — capture and hold still.")}</p>
+      {challenge && purpose === "enroll" && <>{purpose === "enroll" && <><small>STEP {Math.min(challenge.step + 1, challenge.total)} OF {challenge.total}</small><progress value={challenge.step} max={challenge.total} aria-label="Verified camera steps" /></>}<div className={`pose-example ${challenge.pose || "front"}`} aria-hidden="true"><svg viewBox="0 0 100 90"><g className="demo-face"><ellipse cx="50" cy="43" rx="23" ry="30"/><path d="M44 53 Q50 58 56 53"/><path className="demo-nose" d="M50 36 L48 46 L53 46"/><ellipse className="demo-eye" cx="39" cy="34" rx="3" ry="4"/><ellipse className="demo-eye" cx="61" cy="34" rx="3" ry="4"/></g>{challenge.pose === "left" && <path className="demo-arrow" d="M24 76 H5 M5 76 L12 69 M5 76 L12 83"/>}{challenge.pose === "right" && <path className="demo-arrow" d="M76 76 H95 M95 76 L88 69 M95 76 L88 83"/>}</svg></div><h3>{challenge.complete ? "All steps verified" : prompts[challenge.pose || "front"]}</h3></>}
+      <p>{status || (purpose !== "enroll" ? "Look straight at the camera, keep your face visible, and capture your image." : challenge?.pose === "blink" ? "Press Start eye check. Keep eyes open first. When CLOSE appears, close both eyes for one second, then reopen them." : challenge?.pose === "left" || challenge?.pose === "right" ? "Turn a little, about 20°. Keep your whole face in view and hold still. Then press I’m ready — capture." : "Keep your face inside the oval with your eyes open. Press I’m ready — capture and hold still.")}</p>
     </div>
     {error && <div className="alert error" role="alert">{error}</div>}
-    <label className="consent"><input type="checkbox" checked={consent} disabled={busy} onChange={(e) => setConsent(e.target.checked)} />{purpose === "enroll" ? target ? "I have confirmed this user’s identity and obtained their consent for face enrollment." : "I consent to processing my camera images and storing my face template for attendance verification." : "I consent to live face verification and storing a photo with my attendance record."}</label>
-    <button className="primary wide" disabled={busy || !consent} onClick={ready && challenge ? verify : start}>{busy ? "Verifying…" : !ready ? "Start camera" : challenge?.complete ? "Save verified result" : purpose !== "enroll" ? (["left", "right"].includes(challenge?.pose || "") ? "Retry head-turn check" : purpose === "in" ? "Capture & check in" : "Capture & check out") : challenge?.pose === "blink" ? "Start eye check" : "I’m ready — capture"}</button>
+    <label className="consent"><input type="checkbox" checked={consent} disabled={busy} onChange={(e) => setConsent(e.target.checked)} />{purpose === "enroll" ? target ? "I have confirmed this user’s identity and obtained their consent for face enrollment." : "I consent to processing my camera images and storing my face template for attendance verification." : "I consent to matching this camera image with my enrolled face and storing it with my attendance record."}</label>
+    <button className="primary wide" disabled={busy || !consent} onClick={ready && challenge ? verify : start}>{busy ? "Verifying…" : !ready ? "Start camera" : challenge?.complete ? "Save verified result" : purpose !== "enroll" ? (purpose === "in" ? "Capture & check in" : "Capture & check out") : challenge?.pose === "blink" ? "Start eye check" : "I’m ready — capture"}</button>
     {ready && <button className="wide camera-restart" disabled={busy} onClick={start}>Restart camera checks</button>}
-    <small className="muted">Use your live face. Live head movement helps reject an unchanged photo. It does not guarantee rejection of manipulated photos, replayed videos or virtual cameras.</small>
+    <small className="muted">Use your live face. Attendance uses face matching only. A printed or displayed photo may also match; no liveness or anti-spoof check is performed.</small>
   </div>;
 }
