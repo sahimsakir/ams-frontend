@@ -31,6 +31,8 @@ Attendance now requires **face matching plus MiniVision passive liveness**. One 
 
 ## Use a phone or tablet on the same Wi-Fi
 
+For the full Fedora LAN setup, certificate trust, backend cookies and firewall steps, see [LAN.md](LAN.md). Start with `npm run dev:lan` after configuring `.env.lan`.
+
 Mobile browsers require a **trusted HTTPS address** for camera access. `http://192.168.…:5173` does not meet that requirement, and `localhost` on a phone points to the phone itself.
 
 One development option is [mkcert](https://github.com/FiloSottile/mkcert). Install it on your computer, install its development CA, then create a certificate with your computer's LAN IP (replace the example):
