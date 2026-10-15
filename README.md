@@ -27,7 +27,7 @@ For owner-assisted enrollment: finish your own enrollment, open **People**, sele
 
 There is no file/photo upload option. Camera permission failures show retry instructions, and switching away from the page stops the camera and requires a fresh session. Old single-photo enrollments must complete the new guided flow before attendance is enabled; the old face must match during that upgrade. Ask an owner to reset or help enroll a profile if needed.
 
-Attendance now performs **face matching only**, at the user's explicit request. A photographed print or screen image of the enrolled person may also pass. No attendance liveness/PAD check is performed. Exact previously used photo bytes are blocked, but this cannot reject re-photographed or re-encoded copies.
+Attendance now requires **face matching plus MiniVision passive liveness**. One tap collects four fresh frames without head-turn prompts. Passive PAD can still falsely reject genuine users or accept attacks and needs actual-device validation. Exact previously used photo bytes are blocked, but this cannot reject re-photographed or re-encoded copies.
 
 ## Use a phone or tablet on the same Wi-Fi
 
@@ -69,7 +69,7 @@ npx playwright install chromium
 npm test
 ```
 
-The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, single-photo attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
+The browser checks use a fake webcam and mocked API to verify mandatory enrollment, owner-assisted enrollment, three camera steps, retry behavior, mobile layouts, one-tap four-frame attendance and timestamp rendering. They do not measure recognition accuracy or certify real phone cameras. Optional `CHROMIUM_PATH` selects an existing browser executable for CI.
 
 ## Update for face-only attendance
 
@@ -81,7 +81,7 @@ npm ci
 npm run dev
 ```
 
-Refresh the browser and reopen the camera dialog for a fresh session. Enrollment stays forward/left/right. Attendance only captures and matches an image; no movement, blinking or anti-spoof classifier is required. Face mismatches, expired proofs, unavailable verification, duplicate attendance and exact-image reuse remain blocked. A matching photograph of the enrolled person may be accepted.
+Refresh the browser and reopen the camera dialog for a fresh session. Enrollment stays forward/left/right. Attendance automatically captures four frames and requires both matching and passive liveness; no movement or blinking instruction is required. Face mismatches, expired proofs, unavailable verification, duplicate attendance and exact-image reuse remain blocked. Passive liveness is not guaranteed to reject every photo/video attack.
 
 ## Faster enrollment capture
 
@@ -126,3 +126,5 @@ Owner and users granted `home_office.manage` get Team home office → Assign hom
 Pages use `/overview`, `/attendance`, `/requests`, `/teams`, `/people`, `/settings`, `/roles`, `/permissions`, `/team-home-office`, and `/profile`. Refresh and browser back/forward preserve the selected page. A signed-out direct link stays at its destination through login and enrollment. Legacy `/#requests` links redirect to `/requests`. Unknown paths show a page-not-found message; restricted pages show access unavailable.
 
 Vite development/preview handles SPA deep links. In production, configure the frontend web server to serve `index.html` for app paths (Nginx: `location / { try_files $uri $uri/ /index.html; }`). Keep your `/api` proxy separate.
+
+For this update, rebuild backend face/api/worker as documented in ams-backend. Frontend and backend must be updated together; old single-frame attendance submissions are rejected.

@@ -87,12 +87,29 @@ export function CameraChallenge({allowed=true, purpose, target, request, onVerif
         const canvas = document.createElement("canvas");
         const scale = Math.min(1, 640 / Math.max(v.videoWidth, v.videoHeight));
         canvas.width = Math.round(v.videoWidth * scale); canvas.height = Math.round(v.videoHeight * scale);
-        canvas.getContext("2d", { willReadFrequently: true })!.drawImage(v, 0, 0, canvas.width, canvas.height);
-        const raw = atob(canvas.toDataURL("image/jpeg", .9).split(",")[1]);
         const data = new FormData();
         data.append("nonce", challenge.nonce);
-        data.append("photo", new Blob([Uint8Array.from(raw, (c) => c.charCodeAt(0))], { type: "image/jpeg" }), "capture.jpg");
-        setStatus("Matching your enrolled face…");
+        const seen = new Set<string>();
+        const deadline = Date.now()+6000;
+        let count=0;
+        while(count<4){
+          if(!active())return;
+          if(v.readyState<2||!stream.current?.active)throw new Error("Camera stopped. Restart and retry.");
+          canvas.getContext("2d", { willReadFrequently: true })!.drawImage(v, 0, 0, canvas.width, canvas.height);
+          const encoded=canvas.toDataURL("image/jpeg", .9);
+          if(!seen.has(encoded)){
+            seen.add(encoded);
+            const raw=atob(encoded.split(",")[1]);
+            const blob=new Blob([Uint8Array.from(raw,c=>c.charCodeAt(0))],{type:"image/jpeg"});
+            data.append("frames[]",blob,`frame-${count}.jpg`);
+            if(count===0)data.append("photo",blob,"capture.jpg");
+            count++;
+            setStatus(`Checking live camera · ${count}/4 · hold naturally still…`);
+          }
+          if(Date.now()>deadline)throw new Error("Camera frames are not updating. Restart the camera and retry.");
+          if(count<4)await new Promise(resolve=>setTimeout(resolve,250));
+        }
+        setStatus("Checking liveness and matching your enrolled face…");
         const next = await request<Challenge>(`/face/challenges/${challenge.id}/capture`, "POST", data);
         if (!active()) return;
         if (!next.complete) throw new Error("Face verification did not complete. Restart the camera and retry.");
@@ -163,7 +180,7 @@ export function CameraChallenge({allowed=true, purpose, target, request, onVerif
     </div>
     <div ref={instructions} className="camera-instructions" aria-live="polite" aria-atomic="true">
       {challenge && purpose === "enroll" && <>{purpose === "enroll" && <><small>STEP {Math.min(challenge.step + 1, challenge.total)} OF {challenge.total}</small><progress value={challenge.step} max={challenge.total} aria-label="Verified camera steps" /></>}<div className={`pose-example ${challenge.pose || "front"}`} aria-hidden="true"><svg viewBox="0 0 100 90"><g className="demo-face"><ellipse cx="50" cy="43" rx="23" ry="30"/><path d="M44 53 Q50 58 56 53"/><path className="demo-nose" d="M50 36 L48 46 L53 46"/><ellipse className="demo-eye" cx="39" cy="34" rx="3" ry="4"/><ellipse className="demo-eye" cx="61" cy="34" rx="3" ry="4"/></g>{challenge.pose === "left" && <path className="demo-arrow" d="M24 76 H5 M5 76 L12 69 M5 76 L12 83"/>}{challenge.pose === "right" && <path className="demo-arrow" d="M76 76 H95 M95 76 L88 69 M95 76 L88 83"/>}</svg></div><h3>{challenge.complete ? "All steps verified" : prompts[challenge.pose || "front"]}</h3></>}
-      <p>{status || (purpose !== "enroll" ? "Look straight at the camera, keep your face visible, and capture your image." : challenge?.pose === "blink" ? "Press Start eye check. Keep eyes open first. When CLOSE appears, close both eyes for one second, then reopen them." : challenge?.pose === "left" || challenge?.pose === "right" ? "Turn a little, about 20°. Keep your whole face in view and hold still. Then press I’m ready — capture." : "Keep your face inside the oval with your eyes open. Press I’m ready — capture and hold still.")}</p>
+      <p>{status || (purpose !== "enroll" ? "Look straight at the camera in good light. Tap Capture once and keep your face visible during the brief live check. No head turns needed." : challenge?.pose === "blink" ? "Press Start eye check. Keep eyes open first. When CLOSE appears, close both eyes for one second, then reopen them." : challenge?.pose === "left" || challenge?.pose === "right" ? "Turn a little, about 20°. Keep your whole face in view and hold still. Then press I’m ready — capture." : "Keep your face inside the oval with your eyes open. Press I’m ready — capture and hold still.")}</p>
     </div>
     {error && <div className="alert error" role="alert">{error}</div>}
     {!allowed && <p role="alert">You do not have permission for this action. Ask the Owner to update your access.</p>}

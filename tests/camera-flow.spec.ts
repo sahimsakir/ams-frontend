@@ -38,7 +38,7 @@ async function workspace(page: Page, owner = false) {
       const body = req.postData() || "";
       expect(body).toContain('name="photo"');
       expect(body).toContain('name="nonce"');
-      expect(body).not.toContain('name="frames[]"');
+      expect(body.match(/name="frames\[\]"/g)).toHaveLength(4);
       step = 1;
       value = challenge();
     } else if (path === "/api/face/enroll") {
