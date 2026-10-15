@@ -1280,7 +1280,7 @@ function App() {
             ) : modal === "import" ? (
               <form onSubmit={(e) => { e.preventDefault(); const f=new FormData(e.currentTarget); run(() => submit("/users/import",f)); }}>
                 <p>Import up to 500 new users. Use role keys from the role list; custom role keys are supported. Existing emails are rejected; all rows must be valid before any users are created.</p>
-                <p>Required headers: name,email,password. Optional: role,active,designation,phone. Passwords must have at least 12 characters. Active accepts true/false or 1/0.</p>
+                <p>Required headers: name,email,password. Optional: role,active,designation,phone. Passwords must have at least 6 characters. Active accepts true/false or 1/0.</p>
                 <a href="data:text/csv;charset=utf-8,name%2Cemail%2Cpassword%2Crole%2Cactive%2Cdesignation%2Cphone%0AExample%20User%2Cemployee%40example.com%2CReplace-this-password%2Cemployee%2Ctrue%2CDeveloper%2C" download="users-template.csv">Download CSV template</a>
                 <Field title="CSV file"><input name="file" type="file" accept=".csv,text/csv" required /></Field>
                 <button className="primary wide" disabled={busy || !can("users.import")}>Import users</button>
@@ -1333,13 +1333,13 @@ function App() {
                   title={
                     editing
                       ? "New password (optional)"
-                      : "Initial password (12+ characters)"
+                      : "Initial password (6+ characters)"
                   }
                 >
                   <input
                     name="password"
                     type="password"
-                    minLength={12}
+                    minLength={6}
                     required={!editing}
                     autoComplete="new-password"
                   />
@@ -1441,7 +1441,7 @@ function App() {
                   <input
                     name="password"
                     type="password"
-                    minLength={12}
+                    minLength={6}
                     required
                     autoComplete="new-password"
                   />
