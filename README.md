@@ -130,3 +130,9 @@ Pages use `/overview`, `/attendance`, `/requests`, `/teams`, `/people`, `/settin
 Vite development/preview handles SPA deep links. In production, configure the frontend web server to serve `index.html` for app paths (Nginx: `location / { try_files $uri $uri/ /index.html; }`). Keep your `/api` proxy separate.
 
 For this update, rebuild backend face/api/worker as documented in ams-backend. Frontend and backend must be updated together; old single-frame attendance submissions are rejected.
+
+### Refreshed workspace and analytics
+
+Shared layout/style rules are in `src/workspace.css`; `src/Analytics.tsx` owns daily/monthly reporting at `/analytics`. A mobile/tablet navigation drawer replaces the long menu grid below 1024px, with Escape, focus containment and return focus. Dialogs also support keyboard focus containment and Escape. Responsive cards, forms, local table scrolling and clearer page titles apply across the workspace; logos are preserved.
+
+Analytics appears only with `analytics.view_daily` and/or `analytics.view_monthly`. Owner can assign `analytics.view_team` or `analytics.view_all` through Roles/People; without a scope grant, reports cover self only. Today’s no-check-in is provisional. New joiners are account creation dates; monthly counts are employee-days. Server-side scopes are separate from attendance/photo grants. Apply backend migration `000012` before using this page.

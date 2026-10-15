@@ -5,11 +5,14 @@ import React, {
   type FormEvent,
   type ReactNode,
 } from "react";
+import {Analytics, type AnalyticsData} from "./Analytics";
 import {pagePaths,pageFromLocation} from "./navigation";
 import { DataTable, type TableState } from "./DataTable";
 import { createRoot } from "react-dom/client";
 import {
   LayoutDashboard,
+  Menu,
+  BarChart3,
   CalendarDays,
   Clock3,
   Users,
@@ -28,6 +31,7 @@ import {
   FileCheck2,
 } from "lucide-react";
 import "./style.css";
+import "./workspace.css";
 import { CameraChallenge } from "./CameraChallenge";
 type User = {
   can_view_profile?: boolean;
@@ -192,6 +196,7 @@ function Empty({ children }: { children: ReactNode }) {
 function App() {
   const [user, setUser] = useState<User | null>(null),
     [ready, setReady] = useState(false),
+    [navOpen,setNavOpen] = useState(false),
     [page, setPage] = useState(
       pageFromLocation(),
     ),
@@ -348,10 +353,23 @@ function App() {
   }, [notice]);
   useEffect(()=>{
     if(location.pathname==="/" || (location.pathname.endsWith("/")&&pagePaths[pageFromLocation()]))history.replaceState({},"",pagePaths[pageFromLocation()]||"/overview");
-    const sync=()=>{setPage(pageFromLocation());setModal(null);setError("");};
+    const sync=()=>{setPage(pageFromLocation());setNavOpen(false);setModal(null);setError("");};
     window.addEventListener("popstate",sync);
     return()=>window.removeEventListener("popstate",sync);
   },[]);
+  useEffect(()=>{
+    const mobileNav=navOpen&&window.matchMedia('(max-width:1023px)').matches;
+    const dialog=modal?document.querySelector<HTMLElement>('.modal[role="dialog"]'):mobileNav?document.querySelector<HTMLElement>('.sidebar'):null;
+    if(!dialog)return;
+    const previous=document.activeElement as HTMLElement|null;
+    const previousOverflow=document.body.style.overflow;
+    document.body.style.overflow='hidden';
+    const focusable=()=>Array.from(dialog.querySelectorAll<HTMLElement>('button:not([disabled]),a[href],input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex="0"]')).filter(el=>el.getClientRects().length);
+    focusable()[0]?.focus();
+    const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){setModal(null);setNavOpen(false);}if(e.key==='Tab'){const list=focusable(),first=list[0],last=list.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus();}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus();}}};
+    document.addEventListener('keydown',key);return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener('keydown',key);previous?.focus();};
+  },[modal,navOpen]);
+  useEffect(()=>{const media=window.matchMedia('(max-width:1023px)');const resize=()=>{if(!media.matches)setNavOpen(false);};media.addEventListener('change',resize);return()=>media.removeEventListener('change',resize);},[]);
   async function submit(path: string, body: unknown, method = "POST") {
     await api(path, method, body);
     setModal(null);
@@ -363,6 +381,7 @@ function App() {
     if(!pagePaths[p])return;
     if(location.pathname!==pagePaths[p])history.pushState({},"",pagePaths[p]);
     setModal(null);
+    setNavOpen(false);
     setPage(p);
     setError("");
   }
@@ -466,6 +485,7 @@ function App() {
     ) || [];
   const navigation: [string,string,typeof Home][] = [
     ["overview","Overview",LayoutDashboard],
+    ...(canAny("analytics.view_daily","analytics.view_monthly") ? [["analytics","Analytics",BarChart3] as [string,string,typeof Home]] : []),
     ...(canAny("attendance.view","attendance.view_team","attendance.view_all") ? [["attendance","Attendance",Clock3] as [string,string,typeof Home]] : []),
     ...(canAny("applications.view","applications.view_team","applications.view_all") ? [["requests","Requests",CalendarDays] as [string,string,typeof Home]] : []),
     ...(can("teams.view") ? [["teams","My teams",Users] as [string,string,typeof Home]] : []),
@@ -585,8 +605,10 @@ function App() {
       <Empty>No requests to display.</Empty>
     );
   return (
-    <div className="shell">
-      <aside className="sidebar">
+    <div className={`shell ${navOpen?"nav-open":""}`}>
+      {navOpen&&<button className="nav-backdrop" aria-label="Close navigation overlay" onClick={()=>setNavOpen(false)}/>}
+      <aside className="sidebar" id="workspace-navigation" aria-label="Workspace navigation">
+        <button className="nav-close" aria-label="Close navigation" onClick={()=>setNavOpen(false)}><X size={20}/></button>
         <div className="brand company-brand sidebar-brand"><img src="/brand/jbc-logo.svg" alt="JB Connect Ltd."/><small>ATTENDANCE WORKSPACE</small></div>
         <span className="nav-label">WORKSPACE</span>
         <nav>
@@ -645,6 +667,7 @@ function App() {
       </aside>
       <main>
         <header className="topbar">
+          <button className="nav-toggle" aria-label="Open navigation" aria-expanded={navOpen} aria-controls="workspace-navigation" onClick={()=>setNavOpen(true)}><Menu size={20}/></button>
           <span>
             Workspace <ChevronRight size={14} /> {label(page)}
           </span>
@@ -681,26 +704,30 @@ function App() {
                 {page === "overview"
                   ? `Good to see you, ${user.name.split(" ")[0]}.`
                   : {
-                      requests: "Your time, well managed.",
-                      attendance: "Every workday, accounted for.",
-                      teams: "Better, together.",
-                      people: "Meet your people.",
-                      settings: "Your workspace, your way.",
+                      analytics: "Workforce analytics",
+                      profile: "My profile",
+                      requests: "Requests",
+                      attendance: "Attendance",
+                      teams: "My teams",
+                      people: "People",
+                      settings: "Workspace settings",
                       roles:"Roles",permissions:"Permissions", "team-home":"Team home office",
                     }[page]}
               </h1>
               <p>
                 {page === "overview"
                   ? "Here’s what’s happening in your workspace today."
-                  : "Stay connected to the details that matter."}
+                  : ({analytics:"Headcount, attendance and time off across your permitted scope.",attendance:"Review your workdays. Select a row for full details and permitted photos.",requests:"Track your applications and review requests assigned to you.",teams:"See your team memberships and the people you work with.",people:"Manage employee accounts, access and face enrollment.",settings:"Manage leave policies, working days and workspace activity.",roles:"Define roles and choose exactly what each role can do.",permissions:"Manage the actions available throughout your workspace.","team-home":"Schedule home office for one team or all teams.",profile:"Review and update your account details."}[page] || "Choose a page from the navigation.")}
               </p>
             </div>
             {["overview","requests"].includes(page) && canAny("applications.create_leave","applications.create_home_office","applications.create_overtime") && <button className="primary" onClick={() => setModal(createKind())}>
               <Plus size={17} /> New request
             </button>}
           </div>
+          {page === "analytics" && canAny("analytics.view_daily","analytics.view_monthly") && <Analytics accessKey={JSON.stringify(user.effective_permissions)+user.role} daily={can("analytics.view_daily")} monthly={can("analytics.view_monthly")} request={path=>api<AnalyticsData>(path)}/>}
           {page === "overview" && (
             <>
+              {canAny("analytics.view_daily","analytics.view_monthly")&&<button className="analytics-entry" onClick={()=>nav("analytics")}><BarChart3 size={22}/><span><strong>Workforce analytics</strong><small>Daily headcount, attendance and monthly trends</small></span><ChevronRight size={20}/></button>}
               <section className="overview-grid">
                 <div className="clock-card">
                   <div className="clock-head">

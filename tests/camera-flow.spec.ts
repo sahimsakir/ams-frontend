@@ -1,5 +1,11 @@
 import { test, expect, type Page } from "@playwright/test";
 
+async function navigate(page:Page,name:string){
+ const toggle=page.getByRole('button',{name:'Open navigation',exact:true});
+ if(await toggle.isVisible())await toggle.click();
+ await page.getByRole('button',{name,exact:true}).click();
+}
+
 async function workspace(page: Page, owner = false) {
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -60,7 +66,7 @@ async function workspace(page: Page, owner = false) {
     await route.fulfill({ json: value });
   });
   await page.goto("/");
-  if (owner) await expect(page.getByRole("button", { name: "People", exact: true })).toBeVisible();
+  if (owner) await expect(page.getByRole("heading", { name: /Good to see you/ })).toBeVisible();
   else await expect(page.getByRole("heading", { name: "Enroll your face to continue" })).toBeVisible();
   return { errors, challenges };
 }
@@ -98,7 +104,7 @@ test("phone self-enrollment, retry, check-in and checkout show server dates", as
   await singleCapture(page,"Capture & check out");
   await expect(page.locator(".clock-times")).toContainText("13 Oct 2026, 18:45:40");
   await expect(page.getByRole("button", { name: "Workday complete" })).toBeDisabled();
-  await page.getByRole("button", { name: "Attendance", exact: true }).click();
+  await navigate(page,"Attendance");
   await expect(page.locator("tbody")).toContainText("13 Oct 2026, 09:15:30");
   await expect(page.locator("tbody")).toContainText("13 Oct 2026, 18:45:40");
   expect(challenges.filter((p) => p.startsWith("enroll:"))).toEqual(["enroll:front", "enroll:left", "enroll:right"]);
@@ -107,7 +113,7 @@ test("phone self-enrollment, retry, check-in and checkout show server dates", as
 
 test("camera modal fits narrow phones, tablets and desktops, and stops on close", async ({ page }) => {
   const { errors } = await workspace(page, true);
-  await page.getByRole("button", { name: "People", exact: true }).click();
+  await navigate(page,"People");
   for (const width of [320, 390, 768, 1024, 1440, 1920]) {
     await page.setViewportSize({ width, height: 900 });
     await page.getByRole("button", { name: "Enroll face", exact: true }).click();
@@ -135,7 +141,7 @@ test("camera permission failure provides recovery instructions", async ({ page }
 
 test("owner enrolls a selected user through three steps", async ({ page }) => {
   await workspace(page, true);
-  await page.getByRole("button", { name: "People", exact: true }).click();
+  await navigate(page,"People");
   await page.getByRole("button", { name: "Enroll face", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Enroll face: New Employee" })).toBeVisible();
   await expect(page.getByText("Ask New Employee to sit in front of the camera.", { exact: false })).toBeVisible();
@@ -219,7 +225,7 @@ test('monthly attendance filters, summary cards and owner work slots', async ({p
   await r.fulfill({json:{data:[{id:1,user_id:2,name:'New Employee',work_date:'2026-10-13',check_in:'2026-10-13T03:00:00Z',check_out:null,mode:'office',status:'missing_exit',slot_start:'09:00',slot_end:'18:00'},{id:'leave-2',user_id:2,name:'New Employee',work_date:'2026-10-12',check_in:null,check_out:null,mode:'leave',status:'leave',leave_name:'Casual',slot_start:'09:00',slot_end:'18:00'}],current_page:1,last_page:1,summary:{working_days:10,late_days:1,leave_days:1,home_office_days:0,missing_exits:1,avg_working_minutes:549,actual_avg_minutes:539,early_arrival_avg_minutes:2,late_departure_avg_minutes:7,early_arrival_days:7,late_departure_days:9,late_percent:10,leave_percent:10,home_office_percent:0}}});
  });
  await page.reload();
- await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await navigate(page,"Attendance");
  await expect(page.getByText('9h 9m',{exact:true})).toBeVisible();
  await expect(page.getByText('8h 59m',{exact:true})).toBeVisible();
  await expect(page.locator('tbody')).toContainText('Missing exit');
@@ -229,7 +235,7 @@ test('monthly attendance filters, summary cards and owner work slots', async ({p
  await page.getByLabel('Employee',{exact:true}).selectOption('2');
  await expect.poll(()=>queries.some(u=>u.includes('start_date=2026-10-01')&&u.includes('end_date=2026-10-14')&&u.includes('user_id=2'))).toBe(true);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
- await page.getByRole('button',{name:'People',exact:true}).click();
+ await navigate(page,"People");
  await page.getByRole('button',{name:'Work slot',exact:true}).click();
  await page.getByLabel('Slot start',{exact:true}).fill('10:00');
  await page.getByLabel('Slot end',{exact:true}).fill('19:00');
@@ -246,7 +252,7 @@ test('owner creates custom role and assigns direct user permissions',async({page
  await page.route('**/api/permissions',r=>r.fulfill({json:permissions}));
  await page.route('**/api/users',r=>r.fulfill({json:[{id:2,name:'New Employee',email:'new@example.com',role:'employee',role_id:5,role_name:'Members',active:true,direct_permission_ids:[]}]}));
  await page.reload();
- await page.getByRole('button',{name:'Roles',exact:true}).click();
+ await navigate(page,"Roles");
  await expect(page.getByRole('heading',{name:'People Reader',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Create permission',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Create role',exact:true}).click();
@@ -257,7 +263,7 @@ test('owner creates custom role and assigns direct user permissions',async({page
  await page.getByRole('button',{name:'Save role',exact:true}).click();
  expect((await create).postDataJSON()).toMatchObject({name:'Calendar Editor',slug:'calendar_editor',permission_ids:[2]});
  await expect(page.getByRole('dialog')).toHaveCount(0);
- await page.getByRole('button',{name:'People',exact:true}).click();
+ await navigate(page,"People");
  await page.getByRole('button',{name:'Role & permissions',exact:true}).click();
  await page.getByLabel('Assigned role',{exact:true}).selectOption('6');
  await page.getByRole('checkbox',{name:/Manage calendar/}).check();
@@ -265,7 +271,7 @@ test('owner creates custom role and assigns direct user permissions',async({page
  await page.getByRole('button',{name:'Save user access'}).click();
  expect((await assign).postDataJSON()).toEqual({role_id:6,permission_ids:[2]});
  await expect(page.getByRole('dialog')).toHaveCount(0);
- await page.getByRole('button',{name:'Permissions',exact:true}).click();
+ await navigate(page,"Permissions");
  await expect(page.getByRole('button',{name:'Create permission',exact:true})).toBeVisible();
  await expect(page.getByRole('button',{name:'Create role',exact:true})).toHaveCount(0);
  await expect(page.getByText('View people',{exact:true})).toBeVisible();
@@ -279,7 +285,7 @@ test('custom read-only role only sees granted features and cannot punch',async({
  await expect(page.getByRole('button',{name:'People',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Requests',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Roles',exact:true})).toHaveCount(0);
- await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await navigate(page,"Attendance");
  await expect(page.getByRole('button',{name:'Check in',exact:true})).toBeDisabled();
  await expect(page.getByRole('button',{name:'Check out',exact:true})).toBeDisabled();
 });
@@ -288,7 +294,7 @@ test('permission table filters and sorting; requests only on correct pages',asyn
  await page.setViewportSize({width:390,height:844});await workspace(page,true);
  await page.route('**/api/permissions',r=>r.fulfill({json:[{id:1,name:'zeta.view',display_name:'Zeta view',slug:'zeta.view',system:true},{id:2,name:'alpha.view',display_name:'Alpha view',slug:'alpha.view',system:false}]}));
  await page.reload();await expect(page.getByRole('button',{name:'New request',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'Permissions',exact:true}).click();
+ await navigate(page,"Permissions");
  await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Filter and sort Permission',exact:true}).click();
  await page.getByRole('button',{name:'Sort ascending',exact:true}).click();
@@ -299,14 +305,14 @@ test('permission table filters and sorting; requests only on correct pages',asyn
  await expect(page.locator('tbody tr')).toHaveCount(1);await expect(page.locator('tbody')).toContainText('Alpha view');
  await page.getByRole('button',{name:'Clear filters & sorting',exact:true}).click();await expect(page.locator('tbody tr')).toHaveCount(2);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
- await page.getByRole('button',{name:'Requests',exact:true}).click();await expect(page.getByRole('button',{name:'New request',exact:true})).toBeVisible();
- await page.getByRole('button',{name:'People',exact:true}).click();await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
+ await navigate(page,"Requests");await expect(page.getByRole('button',{name:'New request',exact:true})).toBeVisible();
+ await navigate(page,"People");await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
 });
 
 test('owner assigns one team or all teams home office by date range',async({page})=>{
  await workspace(page,true);
  await page.route('**/api/team-home-office',r=>r.fulfill({json:{data:[],teams:[{id:4,name:'Engineering'}]}}));
- await page.reload();await page.getByRole('button',{name:'Team home office',exact:true}).click();
+ await page.reload();await navigate(page,"Team home office");
  await page.getByRole('button',{name:'Assign home office',exact:true}).click();
  await page.getByLabel('Team',{exact:true}).selectOption('4');
  await page.getByLabel('First day',{exact:true}).fill('2026-10-20');await page.getByLabel('Last day',{exact:true}).fill('2026-10-25');
@@ -324,7 +330,7 @@ test('attendance photo buttons preview both captures and respect row permissions
  await page.route('**/api/attendance?**',r=>r.fulfill({json:{data:[{id:7,user_id:2,name:'Team Member',work_date:'2026-10-14',check_in:'2026-10-14T03:00:00Z',check_out:'2026-10-14T12:00:00Z',mode:'office',can_view_photo:allowed,has_in_photo:true,has_out_photo:true}],current_page:1,last_page:1,summary:{}}}));
  await page.route('**/api/attendance/7/photo/*',r=>r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jFncAAAAASUVORK5CYII=','base64')}));
  await page.reload();
- await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await navigate(page,"Attendance");
  for(const side of ['Check-in','Check-out']){
   await page.locator('tbody tr').first().click();
   await page.getByRole('button',{name:side+' photo',exact:true}).click();
@@ -339,18 +345,18 @@ test('attendance photo buttons preview both captures and respect row permissions
  }
  allowed=false;
  await page.reload();
- await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await navigate(page,"Attendance");
  await expect(page.getByRole('button',{name:'Check-in photo',exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:'Check-out photo',exact:true})).toHaveCount(0);
 });
 
 test('page URLs survive refresh, direct links and browser history', async ({page})=>{
  await workspace(page,true);
- await page.getByRole('button',{name:'Attendance',exact:true}).click();
+ await navigate(page,"Attendance");
  await expect(page).toHaveURL(/\/attendance$/);
  await page.reload();
  await expect(page.getByRole('button',{name:'Attendance',exact:true})).toHaveAttribute('aria-current','page');
- await page.getByRole('button',{name:'Requests',exact:true}).click();
+ await navigate(page,"Requests");
  await expect(page).toHaveURL(/\/requests$/);
  await page.goBack();
  await expect(page).toHaveURL(/\/attendance$/);
@@ -367,4 +373,46 @@ test('page URLs survive refresh, direct links and browser history', async ({page
  await expect(page.getByRole('heading',{name:'Page not found'})).toBeVisible();
  await page.getByRole('button',{name:'Go to overview'}).click();
  await expect(page).toHaveURL(/\/overview$/);
+});
+
+test('analytics daily/monthly views and redesigned pages fit phone tablet and desktop',async({page})=>{
+ await workspace(page,true);
+ const day={date:'2026-10-15',working_day:true,provisional:true,total_employees:26,new_joiners:2,present:17,absent:6,on_leave:3,home_office:5,missing_exits:0,working_minutes:4590};
+ await page.route('**/api/analytics?**',r=>r.fulfill({json:{scope:'all',daily:day,monthly:{month:'2026-10',through:'2026-10-15',total_employees:26,new_joiners:4,present_days:210,absent_days:18,leave_days:12,home_office_days:50,missing_exits:2,working_minutes:100000,trend:Array.from({length:15},(_,i)=>({...day,date:`2026-10-${String(i+1).padStart(2,'0')}`,provisional:i===14}))}}}));
+ await navigate(page,'Analytics');
+ await expect(page).toHaveURL(/\/analytics$/);
+ await expect(page.getByText('No check-in yet',{exact:true})).toBeVisible();
+ await expect(page.locator('.metric-card').first()).toContainText('26');
+ await expect(page.getByRole('button',{name:'New request',exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Monthly',exact:true}).click();
+ await expect(page.getByText('Absent days',{exact:true})).toBeVisible();
+ await page.getByText('View daily breakdown',{exact:true}).click();
+ await expect(page.locator('.analytics-daily-table tbody tr')).toHaveCount(15);
+ await page.evaluate(()=>scrollTo(0,0));
+ await page.screenshot({path:'test-results/analytics-desktop.png',animations:'disabled'});
+ for(const width of [320,390,768,1024,1440]){
+  await page.setViewportSize({width,height:900});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  if(width===390){await expect(page.locator('.sidebar')).toBeHidden();await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:'test-results/analytics-phone.png',animations:'disabled'});}
+ }
+ await page.setViewportSize({width:390,height:844});
+ for(const name of ['Overview','Attendance','Requests','My teams','People','Roles','Permissions','Team home office','Workspace','My profile']){
+  await navigate(page,name);
+  await expect(page.getByRole('button',{name:'Open navigation'})).toHaveAttribute('aria-expanded','false');
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
+ await page.getByRole('button',{name:'Open navigation'}).click();
+ await page.keyboard.press('Escape');
+ await expect(page.getByRole('button',{name:'Open navigation'})).toHaveAttribute('aria-expanded','false');
+});
+
+test('analytics navigation and periods follow explicit grants',async({page})=>{
+ await workspace(page,true);
+ await page.route('**/api/me',r=>r.fulfill({json:{user:{id:1,name:'Report Viewer',email:'report@example.com',role:'employee',active:true,effective_permissions:['analytics.view_monthly','analytics.view_team']},face_enrolled:true}}));
+ await page.route('**/api/analytics?**',r=>r.fulfill({json:{scope:'team',daily:null,monthly:{month:'2026-10',through:'2026-10-15',total_employees:3,new_joiners:0,present_days:10,absent_days:2,leave_days:1,home_office_days:2,missing_exits:0,working_minutes:5400,trend:[]}}}));
+ await page.goto('/analytics');
+ await expect(page.getByText('Your assigned teams',{exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Daily',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Monthly',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'People',exact:true})).toHaveCount(0);
 });
