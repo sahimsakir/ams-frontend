@@ -371,9 +371,7 @@ function App() {
     return (
       <div className="login">
         <section className="login-story">
-          <div className="brand">
-            <div className="logo">a</div> attendance<span>WORKSPACE</span>
-          </div>
+          <div className="brand company-brand login-brand"><img src="/brand/jbc-logo.svg" alt="JB Connect Ltd."/><span>ATTENDANCE WORKSPACE</span></div>
           <div>
             <span className="eyebrow">MORE CLARITY. EVERY WORKDAY.</span>
             <h1>
@@ -589,12 +587,7 @@ function App() {
   return (
     <div className="shell">
       <aside className="sidebar">
-        <div className="brand">
-          <div className="logo">a</div>
-          <div>
-            attendance<small>TEAM WORKSPACE</small>
-          </div>
-        </div>
+        <div className="brand company-brand sidebar-brand"><img src="/brand/jbc-logo.svg" alt="JB Connect Ltd."/><small>ATTENDANCE WORKSPACE</small></div>
         <span className="nav-label">WORKSPACE</span>
         <nav>
           {navigation.map(([id, title, Icon]) => (
@@ -1179,7 +1172,7 @@ function App() {
           </>}
           {page==="profile" && can("profile.view_self") && <div className="card setting"><h2>My profile</h2><p>{user.name} · {user.email}</p><button onClick={()=>viewProfile()}>View my profile</button>{can("profile.update_self")&&<button onClick={()=>setModal("edit-profile")}>Edit my profile</button>}{can("profile.change_password")&&<button onClick={()=>setModal("password")}>Change password</button>}</div>}
           <footer className="page-footer">
-            attendance<span>Built around your working day.</span>
+            <img src="/brand/jbc-logo.svg" alt="JB Connect Ltd."/><span>Attendance · Built around your working day.</span>
           </footer>
         </div>
       </main>
